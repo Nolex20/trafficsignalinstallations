@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛂</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+<title>Реестр светофорных объектов (с облачной синхронизацией)</title>
+<script src="https://api-maps.yandex.ru/2.1/?apikey=ваш_API_ключ&lang=ru_RU" type="text/javascript"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); color: #e4e6eb; min-height: 100vh; font-size: 15px; line-height: 1.5; }
+header { background: rgba(44, 62, 80, 0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid rgba(241, 196, 15, 0.3); padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+header h1 { font-size: 26px; color: #f1c40f; text-shadow: 0 2px 4px rgba(0,0,0,0.3); font-weight: 700; }
+.stats { display: flex; gap: 14px; font-size: 15px; flex-wrap: wrap; align-items: center; }
+.stat { padding: 6px 14px; border-radius: 20px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(4px); font-weight: 500; }
+.stat span { font-weight: 700; font-size: 16px; }
+.btn-map { background: rgba(52, 152, 219, 0.8); backdrop-filter: blur(4px); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 10px 18px; border-radius: 20px; font-weight: 600; cursor: pointer; font-size: 15px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.btn-map:hover { background: rgba(52, 152, 219, 1); }
+.btn-export { background: rgba(46, 204, 113, 0.8); backdrop-filter: blur(4px); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 10px 18px; border-radius: 20px; font-weight: 600; cursor: pointer; font-size: 15px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.btn-export:hover { background: rgba(46, 204, 113, 1); }
+.btn-export:disabled { opacity: 0.6; cursor: not-allowed; }
+.sync-status { background: rgba(46, 204, 113, 0.8); backdrop-filter: blur(4px); color: #fff; padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.1); }
+.sync-status.syncing { background: rgba(243, 156, 18, 0.8); }
+.sync-status.error { background: rgba(231, 76, 60, 0.8); }
+.admin-indicator { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1); user-select: none; }
+.admin-indicator.logged-in { background: rgba(46, 204, 113, 0.2); color: #2ecc71; border-color: rgba(46, 204, 113, 0.4); }
+.admin-indicator.logged-in:hover { background: rgba(46, 204, 113, 0.3); }
+.admin-indicator.logged-out { background: rgba(231, 76, 60, 0.15); color: #e74c3c; border-color: rgba(231, 76, 60, 0.3); }
+.admin-indicator.logged-out:hover { background: rgba(231, 76, 60, 0.25); }
+.admin-icon { font-size: 16px; }
+.container { display: grid; grid-template-columns: 370px 1fr 520px; gap: 20px; padding: 20px; max-width: 1900px; margin: 0 auto; }
+.panel, .modal { background: rgba(30, 34, 45, 0.65); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+.controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.controls-row { display: flex; gap: 10px; align-items: center; }
+.search-container { position: relative; display: flex; align-items: center; }
+.search-container input { width: 100%; padding-right: 40px; }
+.search-clear-btn { position: absolute; right: 10px; width: 24px; height: 24px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 50%; color: #a0a4ab; font-size: 14px; cursor: pointer; display: none; align-items: center; justify-content: center; transition: all 0.2s; line-height: 1; padding: 0; }
+.search-clear-btn:hover { background: rgba(231, 76, 60, 0.3); color: #fff; border-color: rgba(231, 76, 60, 0.5); }
+.search-clear-btn.visible { display: flex; }
+input, select { background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 15px; flex: 1; min-width: 0; font-family: 'Inter', sans-serif; }
+input:focus, select:focus { outline: none; border-color: #f1c40f; background: rgba(0, 0, 0, 0.3); }
+select { cursor: pointer; }
+select option { background: #1a1d23; }
+.btn-add { background: rgba(241, 196, 15, 0.9); backdrop-filter: blur(4px); color: #1a1d23; border: 1px solid rgba(255,255,255,0.2); padding: 12px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; font-size: 15px; }
+.btn-add:hover { background: #f1c40f; }
+.list { max-height: 75vh; overflow-y: auto; padding-right: 6px; }
+.list::-webkit-scrollbar { width: 8px; }
+.list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+.item { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); padding: 14px 16px; margin-bottom: 10px; border-radius: 8px; cursor: pointer; border-left: 4px solid transparent; transition: all 0.2s; }
+.item:hover { background: rgba(255, 255, 255, 0.08); }
+.item.active { background: rgba(241, 196, 15, 0.1); border-left: 4px solid #f1c40f; }
+.item-title { font-weight: 600; font-size: 17px; margin-bottom: 5px; line-height: 1.3; }
+.item-addr { font-size: 14px; color: #a0a4ab; margin-bottom: 8px; }
+.item-meta { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+.badge { background: rgba(255, 255, 255, 0.1); padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+.equip-count-badge { background: rgba(231, 76, 60, 0.2); color: #e74c3c; padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 700; border: 1px solid rgba(231, 76, 60, 0.4); }
+.light { width: 14px; height: 14px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+.light.red { background: #e74c3c; color: #e74c3c; }
+.light.yellow { background: #f1c40f; color: #f1c40f; }
+.light.green { background: #2ecc71; color: #2ecc71; }
+.light.off { background: #555; color: #555; box-shadow: none; }
+.detail h2 { color: #f1c40f; margin-bottom: 8px; cursor: pointer; transition: opacity 0.2s; font-size: 22px; font-weight: 700; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.detail h2:hover { opacity: 0.8; }
+.detail .addr { color: #a0a4ab; margin-bottom: 20px; font-size: 15px; }
+.traffic-light-visual { display: flex; flex-direction: column; align-items: center; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); padding: 18px; border-radius: 14px; width: 90px; margin: 0 auto 20px; border: 1px solid rgba(255,255,255,0.1); }
+.bulb { width: 50px; height: 50px; border-radius: 50%; margin: 6px 0; background: rgba(255,255,255,0.05); transition: all 0.3s; }
+.bulb.on-red { background: #e74c3c; box-shadow: 0 0 20px #e74c3c; }
+.bulb.on-yellow { background: #f1c40f; box-shadow: 0 0 20px #f1c40f; }
+.bulb.on-green { background: #2ecc71; box-shadow: 0 0 20px #2ecc71; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.info-card { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.05); padding: 14px 16px; border-radius: 8px; }
+.info-card .label { font-size: 12px; color: #a0a4ab; text-transform: uppercase; font-weight: 600; letter-spacing: 0.3px; }
+.info-card .value { font-size: 18px; font-weight: 600; margin-top: 5px; }
+.info-card .editable-value { cursor: pointer; padding: 5px 8px; border-radius: 4px; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
+.info-card .editable-value:hover { background: rgba(255,255,255,0.1); }
+.info-card .edit-icon { font-size: 13px; opacity: 0.6; }
+.btn { background: rgba(241, 196, 15, 0.9); backdrop-filter: blur(4px); color: #1a1d23; border: 1px solid rgba(255,255,255,0.2); padding: 12px 22px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 12px; margin-right: 8px; transition: all 0.2s; font-size: 15px; }
+.btn:hover { background: #f1c40f; }
+.btn-danger { background: rgba(231, 76, 60, 0.8); backdrop-filter: blur(4px); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
+.btn-danger:hover { background: #e74c3c; }
+.btn-map-sm { background: rgba(52, 152, 219, 0.8); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s; margin: 0; }
+.btn-map-sm:hover { background: rgba(52, 152, 219, 1); }
+.empty { text-align: center; padding: 60px 20px; color: #a0a4ab; font-size: 15px; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 100; justify-content: center; align-items: center; padding: 20px; }
+.modal-overlay.active { display: flex; }
+.modal h2 { color: #f1c40f; margin-bottom: 18px; font-size: 22px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 13px; color: #a0a4ab; margin-bottom: 6px; text-transform: uppercase; font-weight: 600; }
+.form-group input, .form-group select { width: 100%; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.btn-cancel { background: rgba(255, 255, 255, 0.1); color: #e4e6eb; border: 1px solid rgba(255,255,255,0.1); padding: 12px 22px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 15px; }
+.btn-cancel:hover { background: rgba(255, 255, 255, 0.2); }
+.sort-info { font-size: 14px; color: #a0a4ab; margin-bottom: 8px; font-weight: 500; }
+.map-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 2000; display: none; justify-content: center; align-items: center; padding: 20px; }
+.map-modal.active { display: flex; }
+.map-container { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border-radius: 12px; width: 90vw; height: 85vh; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.map-header { background: rgba(44, 62, 80, 0.9); backdrop-filter: blur(10px); color: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+.map-header h3 { margin: 0; font-size: 20px; }
+.map-close { background: rgba(231, 76, 60, 0.9); border: 1px solid rgba(255,255,255,0.1); color: #fff; width: 38px; height: 38px; border-radius: 8px; cursor: pointer; font-size: 22px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+.map-close:hover { background: #e74c3c; }
+#yandexMap { flex: 1; width: 100%; }
+.map-legend { padding: 14px 20px; background: rgba(248, 249, 250, 0.9); backdrop-filter: blur(10px); border-top: 1px solid rgba(0,0,0,0.1); font-size: 14px; color: #495057; }
+.mode-section, .equipment-section { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 18px; margin-top: 16px; border-left: 4px solid #f1c40f; }
+.mode-section h3, .equipment-section h3 { color: #f1c40f; font-size: 18px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.current-mode-badge { display: inline-block; padding: 5px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; margin-left: 8px; }
+.mode-program1 { background: rgba(46, 204, 113, 0.2); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); }
+.mode-program2 { background: rgba(52, 152, 219, 0.2); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.3); }
+.mode-program3 { background: rgba(155, 89, 182, 0.2); color: #9b59b6; border: 1px solid rgba(155, 89, 182, 0.3); }
+.mode-blinking-yellow { background: rgba(241, 196, 15, 0.2); color: #f1c40f; border: 1px solid rgba(241, 196, 15, 0.3); }
+.mode-round-the-clock { background: rgba(230, 126, 34, 0.2); color: #e67e22; border: 1px solid rgba(230, 126, 34, 0.3); }
+.mode-on-demand { background: rgba(231, 76, 60, 0.2); color: #e74c3c; border: 1px solid rgba(231, 76, 60, 0.3); }
+.mode-off { background: rgba(85, 85, 85, 0.2); color: #aaa; border: 1px solid rgba(85, 85, 85, 0.3); }
+.mode-schedule { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.schedule-item { display: grid; grid-template-columns: 160px 1fr 1fr; gap: 10px; align-items: center; background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: 6px; font-size: 14px; border: 1px solid rgba(255,255,255,0.05); text-align: center; }
+.schedule-item .mode-name { font-weight: 600; text-align: left; }
+.schedule-item input { padding: 4px 8px; font-size: 13px; }
+.schedule-item .current-indicator { color: #2ecc71; font-weight: bold; text-align: center; font-size: 14px; }
+.mode-description { font-size: 14px; color: #c0c4cb; margin-top: 10px; padding: 10px 14px; background: rgba(0,0,0,0.2); border-radius: 6px; line-height: 1.6; border: 1px solid rgba(255,255,255,0.05); }
+.phase-section, .executive-section, .diagram-section { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 18px; margin-top: 16px; }
+.phase-section h3, .executive-section h3, .diagram-section h3 { color: #f1c40f; font-size: 18px; margin-bottom: 12px; font-weight: 700; }
+.pdf-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.pdf-item { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; border-left: 3px solid #e74c3c; border: 1px solid rgba(255,255,255,0.05); }
+.pdf-icon { width: 40px; height: 40px; background: rgba(231, 76, 60, 0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.pdf-info { flex: 1; min-width: 0; }
+.pdf-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdf-meta { font-size: 12px; color: #a0a4ab; margin-top: 2px; }
+.pdf-actions { display: flex; gap: 4px; }
+.pdf-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.05); color: #e4e6eb; width: 32px; height: 32px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s; }
+.pdf-btn:hover { background: rgba(255,255,255,0.2); }
+.pdf-btn.danger:hover { background: rgba(231, 76, 60, 0.3); }
+.upload-pdf-btn { background: rgba(0,0,0,0.2); border: 2px dashed rgba(255,255,255,0.1); border-radius: 8px; padding: 18px; text-align: center; cursor: pointer; transition: all 0.3s; margin-top: 12px; font-size: 14px; color: #a0a4ab; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.upload-pdf-btn:hover { background: rgba(255,255,255,0.05); border-color: #f1c40f; color: #f1c40f; }
+.upload-pdf-btn input[type="file"] { display: none; }
+.editor-section { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 18px; margin-top: 16px; }
+.editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.editor-header h3 { font-size: 18px; color: #f1c40f; margin: 0; font-weight: 700; }
+.btn-icon { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.05); color: #e4e6eb; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: background 0.2s; }
+.btn-icon:hover { background: rgba(255,255,255,0.2); }
+.btn-icon.danger:hover { background: rgba(231, 76, 60, 0.3); }
+.btn-sm { padding: 8px 14px; font-size: 14px; margin: 0; }
+.mode-editor-row { display: grid; grid-template-columns: 1fr 110px 110px 32px; gap: 8px; align-items: center; background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); }
+.mode-editor-row select, .mode-editor-row input { padding: 8px 10px; font-size: 14px; }
+.mode-editor-row.on-demand-row { grid-template-columns: 1fr 32px; }
+.mode-editor-row.on-demand-row .time-display { grid-column: 2 / 3; color: #a0a4ab; font-size: 13px; text-align: center; font-style: italic; }
+.day-type-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.day-type-tab { flex: 1; min-width: 120px; padding: 10px 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; text-align: center; font-size: 12px; font-weight: 600; color: #a0a4ab; transition: all 0.2s; backdrop-filter: blur(4px); }
+.day-type-tab:hover { background: rgba(255,255,255,0.05); border-color: #f1c40f; color: #f1c40f; }
+.day-type-tab.active { background: rgba(241, 196, 15, 0.15); border-color: #f1c40f; color: #f1c40f; }
+.day-type-tab .tab-icon { font-size: 18px; display: block; margin-bottom: 4px; }
+.eq-editor-category { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 12px; }
+.eq-editor-category h4 { color: #f1c40f; font-size: 15px; margin-bottom: 12px; font-weight: 600; }
+.eq-input-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; gap: 10px; }
+.eq-input-row label { flex: 1; font-size: 14px; color: #e4e6eb; }
+.eq-input-row input { width: 90px; padding: 6px 10px; font-size: 14px; text-align: center; }
+.eq-input-row input[type="date"] { width: 150px; }
+.eq-input-row select { width: 150px; padding: 6px 10px; font-size: 14px; }
+.eq-add-btn { background: rgba(46, 204, 113, 0.8); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+.eq-add-btn:hover { background: #2ecc71; }
+.eq-remove-btn { background: rgba(231, 76, 60, 0.8); color: #fff; border: 1px solid rgba(255,255,255,0.1); width: 26px; height: 26px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+.eq-remove-btn:hover { background: #e74c3c; }
+.eq-dynamic-list { margin-top: 8px; }
+.eq-dynamic-item { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+.eq-dynamic-item select { flex: 1; font-size: 14px; padding: 6px 8px; }
+.eq-dynamic-item input { width: 90px; font-size: 14px; padding: 6px 8px; text-align: center; }
+.equipment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.equipment-category { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); }
+.equipment-category h4 { color: #f1c40f; font-size: 15px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.equipment-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; }
+.equipment-row:last-child { border-bottom: none; }
+.equipment-row .eq-name { color: #e4e6eb; flex: 1; }
+.equipment-row .eq-count { color: #f1c40f; font-weight: 600; min-width: 50px; text-align: right; }
+.equipment-row .eq-count.zero { color: #666; }
+.equipment-date-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 14px; }
+.equipment-date-row .eq-label { color: #a0a4ab; }
+.equipment-date-row .eq-value { color: #e4e6eb; font-weight: 600; }
+.eq-section-title { font-size: 12px; color: #f1c40f; text-transform: uppercase; margin-top: 10px; margin-bottom: 5px; font-weight: 700; letter-spacing: 0.5px; }
+.filter-panel { max-height: 85vh; overflow-y: auto; padding-right: 4px; }
+.filter-panel::-webkit-scrollbar { width: 6px; }
+.filter-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+.filter-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid #f1c40f; }
+.filter-panel-header h3 { color: #f1c40f; font-size: 17px; display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 700; }
+.btn-reset-filters { background: rgba(231, 76, 60, 0.8); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.btn-reset-filters:hover { background: #e74c3c; }
+.filter-section { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.05); }
+.filter-section-title { font-size: 12px; color: #f1c40f; text-transform: uppercase; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; letter-spacing: 0.5px; }
+.filter-checkbox-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; padding-right: 4px; }
+.filter-checkbox-list::-webkit-scrollbar { width: 4px; }
+.filter-checkbox-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+.filter-checkbox-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.15s; }
+.filter-checkbox-item:hover { background: rgba(255,255,255,0.05); }
+.filter-checkbox-item input[type="checkbox"] { cursor: pointer; accent-color: #f1c40f; width: 16px; height: 16px; flex-shrink: 0; }
+.filter-checkbox-item label { cursor: pointer; flex: 1; user-select: none; color: #e4e6eb; }
+.filter-checkbox-item .count-badge { background: rgba(255,255,255,0.1); color: #a0a4ab; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; }
+.filter-range-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+.filter-range-row input { padding: 8px 10px; font-size: 13px; text-align: center; }
+.filter-range-label { font-size: 12px; color: #a0a4ab; margin-bottom: 6px; font-weight: 500; }
+.filter-active-info { background: rgba(44, 62, 80, 0.8); backdrop-filter: blur(4px); border-left: 3px solid #f1c40f; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #e4e6eb; margin-bottom: 10px; display: none; border: 1px solid rgba(255,255,255,0.1); }
+.filter-active-info.active { display: block; }
+.filter-active-info strong { color: #f1c40f; }
+.storage-info { position: fixed; bottom: 20px; left: 20px; z-index: 500; background: rgba(44, 62, 80, 0.8); backdrop-filter: blur(4px); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 10px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.toggle-container { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; user-select: none; transition: all 0.2s; }
+.toggle-container:hover { border-color: #f1c40f; }
+.toggle-container.active { border-color: #2ecc71; background: rgba(46, 204, 113, 0.15); }
+.toggle-switch { position: relative; width: 42px; height: 24px; background: rgba(255,255,255,0.2); border-radius: 12px; transition: background 0.3s; }
+.toggle-container.active .toggle-switch { background: #2ecc71; }
+.toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: transform 0.3s; }
+.toggle-container.active .toggle-switch::after { transform: translateX(18px); }
+.toggle-label { font-size: 14px; color: #a0a4ab; font-weight: 600; }
+.toggle-container.active .toggle-label { color: #2ecc71; }
+.login-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 3000; display: none; justify-content: center; align-items: center; padding: 20px; }
+.login-modal.active { display: flex; }
+.login-box { background: rgba(30, 34, 45, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(241, 196, 15, 0.3); border-radius: 16px; padding: 32px; max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.login-box h3 { color: #f1c40f; font-size: 22px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.login-box .login-subtitle { color: #c0c4cb; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+.login-box .login-field { margin-bottom: 16px; }
+.login-box .login-field label { display: block; font-size: 12px; color: #a0a4ab; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; font-weight: 600; }
+.login-box .login-field input { width: 100%; padding: 14px 16px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 16px; transition: border-color 0.2s; font-family: 'Inter', sans-serif; }
+.login-box .login-field input:focus { outline: none; border-color: #f1c40f; background: rgba(0,0,0,0.4); }
+.login-box .login-actions { display: flex; gap: 10px; margin-top: 20px; }
+.login-box .btn-login { flex: 1; background: rgba(241, 196, 15, 0.9); color: #1a1d23; border: none; padding: 14px; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; transition: background 0.2s; font-family: 'Inter', sans-serif; }
+.login-box .btn-login:hover { background: #f1c40f; }
+.login-box .btn-login-cancel { background: rgba(255,255,255,0.1); color: #e4e6eb; border: 1px solid rgba(255,255,255,0.1); padding: 14px 22px; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; transition: background 0.2s; font-family: 'Inter', sans-serif; }
+.login-box .btn-login-cancel:hover { background: rgba(255,255,255,0.2); }
+.login-error { color: #e74c3c; font-size: 14px; margin-top: 12px; display: none; padding: 10px 14px; background: rgba(231, 76, 60, 0.1); border-radius: 6px; border-left: 3px solid #e74c3c; }
+.login-error.show { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚦 Реестр светофорных объектов</h1>
+  <div class="stats">
+    <div class="stat">Всего: <span id="totalCount">0</span></div>
+    <div class="stat">Работает: <span id="activeCount" style="color:#2ecc71">0</span></div>
+    <div class="stat">В разработке: <span id="devCount" style="color:#f1c40f">0</span></div>
+    <div class="stat">Отключено: <span id="disabledCount" style="color:#e74c3c">0</span></div>
+    <div class="sync-status" id="syncStatus">🔄 Синхронизация...</div>
+    <div class="admin-indicator logged-out" id="adminIndicator" onclick="handleAdminClick()" title="Нажмите для входа/выхода">
+      <span class="admin-icon" id="adminIcon"></span>
+      <span id="adminLabel">Войти</span>
+    </div>
+    <button class="btn-export" id="btnExport" onclick="exportToExcel()">📊 Экспорт в Excel</button>
+    <button class="btn-map" onclick="openMap()">🗺️ Карта</button>
+  </div>
+</header>
+<div class="container">
+  <div class="panel filter-panel" id="filterPanel">
+    <div class="filter-panel-header">
+      <h3>🔍 Фильтры</h3>
+      <button class="btn-reset-filters" onclick="resetAllFilters()">✕ Сброс</button>
+    </div>
+    <div class="filter-active-info" id="filterActiveInfo">
+      Активно фильтров: <strong id="activeFiltersCount">0</strong>
+    </div>
+    <div id="filterSectionsContainer"></div>
+  </div>
+  <div class="panel detail" id="detail">
+    <div class="empty">🔍 Введите название объекта в поиск справа, чтобы найти его</div>
+  </div>
+  <div class="panel">
+    <div class="controls">
+      <div class="search-container">
+        <input type="text" id="search" placeholder="🔍 Поиск по названию...">
+        <button class="search-clear-btn" id="searchClearBtn" onclick="clearSearch()" title="Очистить поиск">✕</button>
+      </div>
+      <div class="controls-row">
+        <div class="toggle-container" id="listToggle" onclick="toggleListVisibility()">
+          <div class="toggle-switch"></div>
+          <span class="toggle-label">Список</span>
+        </div>
+        <select id="districtFilter"><option value="">Все районы</option></select>
+        <button class="btn-add" onclick="handleAddObject()">➕ Добавить</button>
+      </div>
+      <select id="sortBy">
+        <option value="name">Сортировать: по названию (А-Я)</option>
+        <option value="name-desc">Сортировать: по названию (Я-А)</option>
+        <option value="district">Сортировать: по району</option>
+        <option value="status">Сортировать: по статусу</option>
+        <option value="cycle">Сортировать: по длительности цикла</option>
+        <option value="eq-trafficLights">⚙️ По кол-ву светофоров (↓)</option>
+        <option value="eq-trafficLights-asc">⚙️ По кол-ву светофоров (↑)</option>
+        <option value="eq-poles">🏗️ По кол-ву колонок (↓)</option>
+        <option value="eq-detectors">⚙️ По кол-ву детекторов (↓)</option>
+        <option value="eq-controllers">⚙️ По кол-ву контроллеров (↓)</option>
+        <option value="eq-commissioning"> По дате ввода (новые)</option>
+        <option value="eq-commissioning-old"> По дате ввода (старые)</option>
+        <option value="eq-reconstruction"> По дате реконструкции (новые)</option>
+        <option value="eq-total">⚙️ По общему кол-ву оборудования (↓)</option>
+      </select>
+    </div>
+    <div id="listContainer" style="display:none;">
+      <div class="sort-info" id="sortInfo">Показано объектов: 0</div>
+      <div class="list" id="list"></div>
+    </div>
+    <div id="listHint" style="text-align:center; padding:40px 20px; color:#a0a4ab; font-size:15px;">
+      👆 Включите переключатель "Список" и введите название объекта
+    </div>
+  </div>
+</div>
+<div class="map-modal" id="mapModal">
+  <div class="map-container">
+    <div class="map-header">
+      <h3>🗺️ Карта светофорных объектов</h3>
+      <button class="map-close" onclick="closeMap()">✕</button>
+    </div>
+    <div id="yandexMap"></div>
+    <div class="map-legend">
+      <strong>Условные обозначения:</strong>
+      <span style="color:#2ecc71">●</span> Работает
+      <span style="color:#f1c40f; margin-left:12px">●</span> В разработке
+      <span style="color:#e74c3c; margin-left:12px">●</span> Отключён
+      <span style="margin-left:12px">Нажмите на метку, чтобы открыть информацию об объекте</span>
+    </div>
+  </div>
+</div>
+<div class="login-modal" id="loginModal">
+  <div class="login-box">
+    <h3>🔐 Вход в режим администратора</h3>
+    <p class="login-subtitle" id="loginSubtitle">Для выполнения этого действия необходимо ввести пароль администратора.</p>
+    <div class="login-field">
+      <label>Логин</label>
+      <input type="text" id="loginUsername" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label>Пароль</label>
+      <input type="password" id="loginPassword" placeholder="Введите пароль" autocomplete="current-password">
+    </div>
+    <div class="login-error" id="loginError">❌ Неверный логин или пароль</div>
+    <div class="login-actions">
+      <button class="btn-login-cancel" onclick="closeLoginModal()">Отмена</button>
+      <button class="btn-login" onclick="submitLogin()">Войти</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>➕ Новый светофорный объект</h2>
+    <form id="addForm" onsubmit="addObject(event)">
+      <div class="form-group"><label>Название *</label><input type="text" id="f-name" required placeholder="Перекрёсток Ленина — Пушкина"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Район *</label><input type="text" id="f-district" required list="districtsList" placeholder="Выберите район"><datalist id="districtsList"></datalist></div>
+        <div class="form-group"><label>Статус</label>
+          <select id="f-status">
+            <option value="active">🟢 Работает</option>
+            <option value="in_development">🟡 В разработке</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Инвентарный номер</label><input type="text" id="f-inventory" placeholder="Например: СО-001"></div>
+      <div class="form-group"><label>Номер паспорта</label><input type="text" id="f-passport" placeholder="Например: ПС-2024-001"></div>
+      <div class="form-group"><label>Длительность цикла (сек)</label><input type="number" id="f-cycle" placeholder="64" min="0"></div>
+      <div class="form-group"><label>Координаты (широта, долгота)</label><input type="text" id="f-coords" placeholder="53.6884, 23.8258"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="closeModal()">Отмена</button>
+        <button type="submit" class="btn-add">Создать объект</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="storage-info" id="storageInfo">☁️ Облако: подключение...</div>
+<script>
+const ADMIN_USERNAME = 'admin';
+const ADMIN_PASSWORD = 'admin123';
+const ADMIN_TOKEN_KEY = 'traffic_lights_admin_session';
+const ADMIN_TOKEN_VALUE = 'authenticated_v1';
+let pendingAction = null;
+const GRODNO_CENTER = [53.6884, 23.8258];
+const GRODNO_ZOOM = 13;
+let savedMapState = { center: [...GRODNO_CENTER], zoom: GRODNO_ZOOM };
+function isAdmin() { return localStorage.getItem(ADMIN_TOKEN_KEY) === ADMIN_TOKEN_VALUE; }
+function updateAdminUI() {
+  const indicator = document.getElementById('adminIndicator');
+  const icon = document.getElementById('adminIcon');
+  const label = document.getElementById('adminLabel');
+  if (isAdmin()) {
+    indicator.classList.remove('logged-out');
+    indicator.classList.add('logged-in');
+    icon.textContent = '🔓';
+    label.textContent = 'Админ';
+    indicator.title = 'Нажмите для выхода из режима администратора';
+  } else {
+    indicator.classList.remove('logged-in');
+    indicator.classList.add('logged-out');
+    icon.textContent = '🔒';
+    label.textContent = 'Войти';
+    indicator.title = 'Нажмите для входа в режим администратора';
+  }
+  renderFilterPanel();
+  updateStats();
+}
+function openLoginModal(actionName, actionFn) {
+  pendingAction = { name: actionName, fn: actionFn };
+  document.getElementById('loginSubtitle').textContent = `Для действия "${actionName}" необходимо войти как администратор.`;
+  document.getElementById('loginError').classList.remove('show');
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginModal').classList.add('active');
+  setTimeout(() => document.getElementById('loginPassword').focus(), 100);
+}
+function closeLoginModal() { document.getElementById('loginModal').classList.remove('active'); pendingAction = null; }
+function submitLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, ADMIN_TOKEN_VALUE);
+    updateAdminUI();
+    closeLoginModal();
+    if (pendingAction && pendingAction.fn) { const fn = pendingAction.fn; pendingAction = null; fn(); }
+  } else {
+    document.getElementById('loginError').classList.add('show');
+    document.getElementById('loginPassword').value = '';
+    document.getElementById('loginPassword').focus();
+  }
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && document.getElementById('loginModal').classList.contains('active')) submitLogin();
+  if (e.key === 'Escape' && document.getElementById('loginModal').classList.contains('active')) closeLoginModal();
+});
+function handleAdminClick() {
+  if (isAdmin()) {
+    if (confirm('🔓 Выйти из режима администратора?\nВсе функции редактирования будут заблокированы.')) {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      updateAdminUI();
+      if (currentId) showDetail(currentId);
+    }
+  } else { openLoginModal('Вход в систему', () => { if (currentId) showDetail(currentId); }); }
+}
+function adminAction(actionName, fn) { if (isAdmin()) return fn(); else { openLoginModal(actionName, fn); return null; } }
+function requireAdmin(actionName) { if (!isAdmin()) { openLoginModal(actionName, () => {}); return false; } return true; }
+const firebaseConfig = {
+  apiKey: "AIzaSyCNQqPm7-Bk1ZYe2fFiZneCnZymimbeH-c",
+  authDomain: "traffic-lights-grodno.firebaseapp.com",
+  databaseURL: "https://traffic-lights-grodno-default-rtdb.firebaseio.com",
+  projectId: "traffic-lights-grodno",
+  storageBucket: "traffic-lights-grodno.firebasestorage.app",
+  messagingSenderId: "940824844345",
+  appId: "1:940824844345:web:417894c47c77940b0055e8"
+};
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+const storage = firebase.storage();
+const DISTRICTS_LIST = ['г. Гродно','г. Лида','г. Слоним','г. Волковыск','г. Новогрудок','г. Сморгонь','г. Островец','г. Мосты','г. Скидель','г. Щучин','г. Дятлово','г.п. Бол. Берестовица','г. Ошмяны','г.п. Свислочь','г.п. Ивье','р.п. Пограничный'];
+const CONTROLLER_TYPES = ['ДУМКА-16','ДУМКА-32','ДУМКА-48','ДУМКА-64','ДУМКА-80','СИДК-16','СИДК-24','СИДК-32','СИДК-58','БДКЛ-24'];
+const ASUD_TYPES = ['МЗЦ', 'ВОЛС', 'Нет связи'];
+const ADDITIONAL_SECTION_TYPES = ['Стрелки козырьковые','Стрелки плоские','ИС.1.п','ИС.2'];
+const TVP_TYPES = ['Механические','Сенсорные'];
+const POLE_TYPES = ['Транспортные оцинкованные','Транспортная для камер высотой 6м','Транспортные не оцинкованные','Пешеходные оцинкованные','Пешеходная для камер высотой 6м', 'Пешеходные не оцинкованные', 'Для камер высотой 6м отдельностоящие'];
+const DETECTOR_TYPES = ['Индуктивные','Магнитно-резистивные'];
+const DAY_TYPES = {
+  all: '🕐 Всё время',
+  monday: '📅 Понедельник',
+  weekdays: '📅 Понедельник-пятница',
+  'weekdays-sat': '📅 Понедельник-суббота',
+  'tue-sun': '📅 Вторник-воскресенье',
+  weekends: '🌴 Суббота-воскресенье',
+  sunday: '🌴 Воскресенье'
+};
+const DAY_TYPES_ORDER = ['all', 'monday', 'weekdays', 'weekdays-sat', 'tue-sun', 'weekends', 'sunday'];
+const STATUS_CONFIG = {
+  active: { label: '🟢 Работает', color: '#2ecc71', phase: 'green' },
+  in_development: { label: '🟡 В разработке', color: '#f1c40f', phase: 'yellow' },
+  disabled: { label: '🔴 Отключён', color: '#e74c3c', phase: 'red' }
+};
+function getStatusByPhase(phase) { if (phase === 'green') return 'active'; if (phase === 'yellow') return 'in_development'; if (phase === 'red' || phase === 'off') return 'disabled'; return 'active'; }
+function getPhaseByStatus(status) { return STATUS_CONFIG[status]?.phase || 'green'; }
+function normalizePhase(o) { if (o.phase === 'off' && o.status === 'disabled') o.phase = 'red'; return o; }
+let myMap = null, objectPlacemarks = [];
+const MODE_DESCRIPTIONS = {
+  program1: 'Программа 1 — основная рабочая программа светофорного регулирования.',
+  program2: 'Программа 2 — альтернативная программа регулирования.',
+  program3: 'Программа 3 — дополнительная программа регулирования.',
+  'blinking-yellow': 'Желтое мигание — режим мигающего желтого сигнала.',
+  'round-the-clock': 'Круглосуточно — режим непрерывной работы 24/7.',
+  'on-demand': 'По вызову — режим работы по запросу транспорта или пешеходов.',
+  off: 'Объект отключён.'
+};
+const MODE_NAMES = {
+  program1: '🟢 Программа 1',
+  program2: '🔵 Программа 2',
+  program3: '🟣 Программа 3',
+  'blinking-yellow': '🟡 Желтое мигание',
+  'round-the-clock': '🟠 Круглосуточно',
+  'on-demand': '🔴 По вызову',
+  off: '⚫ Отключён'
+};
+const defaultObjects = [{
+  id:'T-001', name:'Перекрёсток пр. Октябрьский — пр. Притомский', address:'пр. Октябрьский / пр. Притомский', district:'г. Гродно', type:'Транспортный', status:'active', phase:'green', cycle:64, coords:'53.6884, 23.8258', workMode:'program1',
+  inventoryNumber: 'СО-001', passportNumber: 'ПС-2024-001',
+  modeSchedule:[{mode:'program1',start:'06:30',end:'21:00',dayType:'all',cycle:64},{mode:'program2',start:'21:00',end:'06:30',dayType:'all',cycle:64}],
+  phaseDiagram:{pdfFiles:[]}, executiveSurvey:{pdfFiles:[]}, signalDiagram:{pdfFiles:[]},
+  equipment: {
+    controllers: [{type:'ДУМКА-32',count:1}], asud: [{type:'МЗЦ',count:1}],
+    trafficLights: { transport: 8, bicycle: 2, pedestrian: 4, pedestrianCountdown: 4 },
+    commissioningDate: '2015-06-15', reconstructionDate: '2024-03-20',
+    additionalSections: [{type:'Стрелки козырьковые',count:4},{type:'Стрелки плоские',count:2},{type:'ИС.1.п',count:2},{type:'ИС.2',count:1}],
+    tvp: [{type:'Механические',count:2},{type:'Сенсорные',count:4}], soundSignals: 4,
+    poles: [{type:'Транспортные оцинкованные',count:6},{type:'Транспортная для камер высотой 6м',count:2},{type:'Транспортные не оцинкованные',count:2},{type:'Пешеходные оцинкованные',count:4},{type:'Пешеходная для камер высотой 6м',count:1},{type:'Для камер высотой 6м отдельностоящие',count:2}],
+    detectors: [{type:'Индуктивные',count:8},{type:'Магнитно-резистивные',count:4}], oldiSvetPoles: 2
+  }
+}];
+function getDefaultEquipment() { return { controllers: [], asud: [], trafficLights: { transport: 0, bicycle: 0, pedestrian: 0, pedestrianCountdown: 0 }, commissioningDate: '', reconstructionDate: '', additionalSections: [], tvp: [], soundSignals: 0, poles: [], detectors: [], oldiSvetPoles: 0 }; }
+function migrateEquipment(eq) {
+  if (!eq) return getDefaultEquipment();
+  if (eq.additionalSections && typeof eq.additionalSections === 'object' && !Array.isArray(eq.additionalSections)) {
+    const old = eq.additionalSections; const arr = [];
+    if (old.arrowsCanopy) arr.push({type:'Стрелки козырьковые', count: old.arrowsCanopy});
+    if (old.arrowsFlat) arr.push({type:'Стрелки плоские', count: old.arrowsFlat});
+    if (old.infoIS1p) arr.push({type:'ИС.1.п', count: old.infoIS1p});
+    if (old.infoIS2) arr.push({type:'ИС.2', count: old.infoIS2});
+    eq.additionalSections = arr;
+  }
+  if (!Array.isArray(eq.additionalSections)) eq.additionalSections = [];
+  if (eq.tvp && typeof eq.tvp === 'object' && !Array.isArray(eq.tvp)) {
+    const old = eq.tvp; const arr = [];
+    if (old.mechanical) arr.push({type:'Механические', count: old.mechanical});
+    if (old.sensor) arr.push({type:'Сенсорные', count: old.sensor});
+    eq.tvp = arr;
+  }
+  if (!Array.isArray(eq.tvp)) eq.tvp = [];
+  if (eq.poles && typeof eq.poles === 'object' && !Array.isArray(eq.poles)) {
+    const old = eq.poles; const arr = [];
+    if (old.transportGalvanized) arr.push({type:'Транспортные оцинкованные', count: old.transportGalvanized});
+    if (old.transportNonGalvanized) arr.push({type:'Транспортные не оцинкованные', count: old.transportNonGalvanized});
+    if (old.pedestrianGalvanized) arr.push({type:'Пешеходные оцинкованные', count: old.pedestrianGalvanized});
+    if (old.pedestrianNonGalvanized) arr.push({type:'Пешеходные не оцинкованные', count: old.pedestrianNonGalvanized});
+    eq.poles = arr;
+  }
+  if (!Array.isArray(eq.poles)) eq.poles = [];
+  if (eq.detectors && typeof eq.detectors === 'object' && !Array.isArray(eq.detectors)) {
+    const old = eq.detectors; const arr = [];
+    if (old.inductive) arr.push({type:'Индуктивные', count: old.inductive});
+    if (old.magnetoresistive) arr.push({type:'Магнитно-резистивные', count: old.magnetoresistive});
+    eq.detectors = arr;
+  }
+  if (!Array.isArray(eq.detectors)) eq.detectors = [];
+  return eq;
+}
+let objects = [];
+let currentId = null, editingPhaseDiagram = false;
+let tempPhaseDiagram = null, tempExecutiveSurvey = null, tempModeSchedule = null, tempEquipment = null;
+let currentDayType = 'all';
+let listVisible = false;
+const listEl = document.getElementById('list'), detailEl = document.getElementById('detail');
+const searchEl = document.getElementById('search'), districtFilterEl = document.getElementById('districtFilter');
+const sortByEl = document.getElementById('sortBy'), sortInfoEl = document.getElementById('sortInfo');
+let equipmentFilters = {
+  controllers: [], asud: [],
+  hasTvp: false, hasDetectors: false, hasSoundSignals: false, hasOldiSvet: false, hasArrows: false, hasInfoSections: false, hasPoles: false,
+  commissioningFrom: '', commissioningTo: '', reconstructionFrom: '', reconstructionTo: '',
+  filterInventory: 'all', filterPhaseDiagram: 'all', filterExecutiveSurvey: 'all', filterSignalDiagram: 'all',
+  filterPhase: [],
+  filterRoundTheClock: false,
+  filterProgram2: false
+};
+function openList() { if (!listVisible) { listVisible = true; const toggle = document.getElementById('listToggle'); if (toggle) toggle.classList.add('active'); } }
+async function migrateOldObjects() {
+  let migrated = false;
+  for (const o of objects) {
+    if (o.phase === 'off' || o.phase === 'red') {
+      if (o.status === 'disabled' || !o.status) { o.status = 'disabled'; o.phase = 'red'; await database.ref(`objects/${o.id}`).update({ status: 'disabled', phase: 'red' }); migrated = true; }
+    }
+    if (!o.status) { o.status = getStatusByPhase(o.phase || 'green'); await database.ref(`objects/${o.id}/status`).set(o.status); migrated = true; }
+    if (o.modeSchedule && Array.isArray(o.modeSchedule)) {
+      let scheduleChanged = false;
+      o.modeSchedule.forEach(item => { if (item.cycle === undefined || item.cycle === null) { item.cycle = o.cycle || 60; scheduleChanged = true; } });
+      if (scheduleChanged) { await database.ref(`objects/${o.id}/modeSchedule`).set(o.modeSchedule); migrated = true; }
+    }
+  }
+  return migrated;
+}
+function loadFromFirebase() {
+  updateSyncStatus('syncing', '🔄 Загрузка...');
+  database.ref('objects').on('value', async (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      objects = Object.values(data);
+      objects.forEach(o => {
+        if (o.equipment) o.equipment = migrateEquipment(o.equipment);
+        normalizePhase(o);
+        if (o.modeSchedule && Array.isArray(o.modeSchedule)) { o.modeSchedule.forEach(item => { if (item.cycle === undefined || item.cycle === null) { item.cycle = o.cycle || 60; } }); }
+      });
+      await migrateOldObjects();
+    } else {
+      objects = [...defaultObjects];
+      const initialData = {};
+      objects.forEach(o => { initialData[o.id] = o; });
+      database.ref('objects').set(initialData);
+    }
+    updateSyncStatus('success', '✅ Синхронизировано');
+    updateDistrictOptions(); updateStats(); renderFilterPanel(); renderList();
+    document.getElementById('storageInfo').textContent = '☁️ Облако: подключено';
+  }, (error) => { updateSyncStatus('error', '❌ Ошибка синхронизации'); console.error('Firebase error:', error); document.getElementById('storageInfo').textContent = '❌ Облако: ошибка'; });
+}
+function updateSyncStatus(status, text) { const el = document.getElementById('syncStatus'); el.textContent = text; el.className = 'sync-status'; if (status === 'syncing') el.classList.add('syncing'); if (status === 'error') el.classList.add('error'); }
+function resetAllFilters() {
+  equipmentFilters = { controllers: [], asud: [], hasTvp: false, hasDetectors: false, hasSoundSignals: false, hasOldiSvet: false, hasArrows: false, hasInfoSections: false, hasPoles: false, commissioningFrom: '', commissioningTo: '', reconstructionFrom: '', reconstructionTo: '', filterInventory: 'all', filterPhaseDiagram: 'all', filterExecutiveSurvey: 'all', filterSignalDiagram: 'all', filterPhase: [], filterRoundTheClock: false, filterProgram2: false };
+  renderFilterPanel(); renderList();
+}
+function getEquipmentStats(o) {
+  const eq = o.equipment || {};
+  const controllers = eq.controllers || [];
+  const asud = eq.asud || [];
+  const tl = eq.trafficLights || {};
+  const totalTrafficLights = (tl.transport||0) + (tl.bicycle||0) + (tl.pedestrian||0) + (tl.pedestrianCountdown||0);
+  const addSec = eq.additionalSections || [];
+  const totalArrows = addSec.filter(s => s.type && s.type.includes('Стрелки')).reduce((s,i) => s + (i.count||0), 0);
+  const totalInfo = addSec.filter(s => s.type && (s.type.includes('ИС'))).reduce((s,i) => s + (i.count||0), 0);
+  const tvp = eq.tvp || []; const totalTvp = tvp.reduce((s,i) => s + (i.count||0), 0);
+  const poles = eq.poles || []; const totalPoles = poles.reduce((s,i) => s + (i.count||0), 0);
+  const detectors = eq.detectors || []; const totalDetectors = detectors.reduce((s,i) => s + (i.count||0), 0);
+  const totalControllers = controllers.reduce((s,c) => s + (c.count||0), 0);
+  const totalEquipment = totalTrafficLights + totalArrows + totalInfo + totalTvp + (eq.soundSignals||0) + totalPoles + totalDetectors + (eq.oldiSvetPoles||0) + totalControllers;
+  return { controllerTypes: controllers.map(c => c.type), asudTypes: asud.map(a => a.type), totalTrafficLights, totalArrows, totalInfo, totalTvp, totalPoles, totalDetectors, totalControllers, totalEquipment, soundSignals: eq.soundSignals || 0, oldiSvetPoles: eq.oldiSvetPoles || 0, commissioningDate: eq.commissioningDate || '', reconstructionDate: eq.reconstructionDate || '' };
+}
+function hasProgram2Mode(o) { if (!o.modeSchedule || o.modeSchedule.length === 0) return false; return o.modeSchedule.some(item => item.mode === 'program2'); }
+function hasRoundTheClockMode(o) {
+  if (!o.modeSchedule || o.modeSchedule.length === 0) return false;
+  if (o.modeSchedule.some(item => (item.mode === 'round-the-clock' || (item.start === '00:00' && item.end === '00:00')) && item.mode !== 'off' && item.mode !== 'on-demand' && item.mode !== 'blinking-yellow')) return true;
+  const dayTypes = ['all', 'monday', 'weekdays', 'weekdays-sat', 'tue-sun', 'weekends', 'sunday'];
+  for (const dayType of dayTypes) {
+    const modesForDay = o.modeSchedule.filter(item => item.dayType === dayType || !item.dayType);
+    if (modesForDay.length === 0) continue;
+    const activeModes = modesForDay.filter(item => item.mode !== 'off' && item.mode !== 'on-demand' && item.mode !== 'blinking-yellow');
+    if (activeModes.length === 0) continue;
+    const minutes = new Array(1440).fill(false);
+    for (const item of activeModes) {
+      const startMinutes = timeToMinutes(item.start);
+      const endMinutes = timeToMinutes(item.end);
+      if (startMinutes < endMinutes) { for (let i = startMinutes; i < endMinutes; i++) minutes[i] = true; }
+      else if (startMinutes === endMinutes) { for (let i = 0; i < 1440; i++) minutes[i] = true; }
+      else { for (let i = startMinutes; i < 1440; i++) minutes[i] = true; for (let i = 0; i < endMinutes; i++) minutes[i] = true; }
+    }
+    if (minutes.every(m => m)) return true;
+  }
+  return false;
+}
+function timeToMinutes(time) { const [hours, minutes] = time.split(':').map(Number); return hours * 60 + minutes; }
+function matchesEquipmentFilters(o) {
+  const stats = getEquipmentStats(o);
+  if (equipmentFilters.controllers.length > 0 && !equipmentFilters.controllers.some(t => stats.controllerTypes.includes(t))) return false;
+  if (equipmentFilters.asud.length > 0 && !equipmentFilters.asud.some(t => stats.asudTypes.includes(t))) return false;
+  if (equipmentFilters.hasTvp && stats.totalTvp === 0) return false;
+  if (equipmentFilters.hasDetectors && stats.totalDetectors === 0) return false;
+  if (equipmentFilters.hasSoundSignals && stats.soundSignals === 0) return false;
+  if (equipmentFilters.hasOldiSvet && stats.oldiSvetPoles === 0) return false;
+  if (equipmentFilters.hasArrows && stats.totalArrows === 0) return false;
+  if (equipmentFilters.hasInfoSections && stats.totalInfo === 0) return false;
+  if (equipmentFilters.hasPoles && stats.totalPoles === 0) return false;
+  if (equipmentFilters.commissioningFrom && stats.commissioningDate < equipmentFilters.commissioningFrom) return false;
+  if (equipmentFilters.commissioningTo && stats.commissioningDate > equipmentFilters.commissioningTo) return false;
+  if (equipmentFilters.reconstructionFrom && stats.reconstructionDate < equipmentFilters.reconstructionFrom) return false;
+  if (equipmentFilters.reconstructionTo && stats.reconstructionDate > equipmentFilters.reconstructionTo) return false;
+  if (equipmentFilters.filterInventory === 'has' && !o.inventoryNumber) return false;
+  if (equipmentFilters.filterInventory === 'not' && o.inventoryNumber) return false;
+  const hasPhase = o.phaseDiagram && o.phaseDiagram.pdfFiles && o.phaseDiagram.pdfFiles.length > 0;
+  if (equipmentFilters.filterPhaseDiagram === 'has' && !hasPhase) return false;
+  if (equipmentFilters.filterPhaseDiagram === 'not' && hasPhase) return false;
+  const hasExec = o.executiveSurvey && o.executiveSurvey.pdfFiles && o.executiveSurvey.pdfFiles.length > 0;
+  if (equipmentFilters.filterExecutiveSurvey === 'has' && !hasExec) return false;
+  if (equipmentFilters.filterExecutiveSurvey === 'not' && hasExec) return false;
+  const hasSignal = o.signalDiagram && o.signalDiagram.pdfFiles && o.signalDiagram.pdfFiles.length > 0;
+  if (equipmentFilters.filterSignalDiagram === 'has' && !hasSignal) return false;
+  if (equipmentFilters.filterSignalDiagram === 'not' && hasSignal) return false;
+  if (equipmentFilters.filterPhase && equipmentFilters.filterPhase.length > 0) { const objectPhase = (o.phase === 'off') ? 'red' : o.phase; if (!equipmentFilters.filterPhase.includes(objectPhase)) return false; }
+  if (equipmentFilters.filterRoundTheClock && !hasRoundTheClockMode(o)) return false;
+  if (equipmentFilters.filterProgram2 && !hasProgram2Mode(o)) return false;
+  return true;
+}
+function countActiveFilters() {
+  let count = 0;
+  if (equipmentFilters.controllers.length > 0) count++;
+  if (equipmentFilters.asud.length > 0) count++;
+  if (equipmentFilters.hasTvp) count++;
+  if (equipmentFilters.hasDetectors) count++;
+  if (equipmentFilters.hasSoundSignals) count++;
+  if (equipmentFilters.hasOldiSvet) count++;
+  if (equipmentFilters.hasArrows) count++;
+  if (equipmentFilters.hasInfoSections) count++;
+  if (equipmentFilters.hasPoles) count++;
+  if (equipmentFilters.commissioningFrom) count++;
+  if (equipmentFilters.commissioningTo) count++;
+  if (equipmentFilters.reconstructionFrom) count++;
+  if (equipmentFilters.reconstructionTo) count++;
+  if (equipmentFilters.filterInventory !== 'all') count++;
+  if (equipmentFilters.filterPhaseDiagram !== 'all') count++;
+  if (equipmentFilters.filterExecutiveSurvey !== 'all') count++;
+  if (equipmentFilters.filterSignalDiagram !== 'all') count++;
+  if (equipmentFilters.filterPhase && equipmentFilters.filterPhase.length > 0) count++;
+  if (equipmentFilters.filterRoundTheClock) count++;
+  if (equipmentFilters.filterProgram2) count++;
+  return count;
+}
+function getDistrictFilteredObjects() { const district = districtFilterEl.value; if (district === '') return objects; return objects.filter(o => o.district === district); }
+function countObjectsWithController(type) { return getDistrictFilteredObjects().filter(o => getEquipmentStats(o).controllerTypes.includes(type)).length; }
+function countObjectsWithAsud(type) { return getDistrictFilteredObjects().filter(o => getEquipmentStats(o).asudTypes.includes(type)).length; }
+function getEquipCountBadgesForItem(o) {
+  const badges = [];
+  const eq = o.equipment || {};
+  if (equipmentFilters.hasTvp) { const tvpTotal = (eq.tvp || []).reduce((s, item) => s + (item.count || 0), 0); if (tvpTotal > 0) badges.push(`<span class="equip-count-badge">🚶 ТВП: ${tvpTotal}</span>`); }
+  if (equipmentFilters.hasDetectors) { const detTotal = (eq.detectors || []).reduce((s, item) => s + (item.count || 0), 0); if (detTotal > 0) badges.push(`<span class="equip-count-badge"> Дет.: ${detTotal}</span>`); }
+  if (equipmentFilters.hasSoundSignals && (eq.soundSignals || 0) > 0) { badges.push(`<span class="equip-count-badge">🔊 Звук: ${eq.soundSignals}</span>`); }
+  if (equipmentFilters.hasOldiSvet && (eq.oldiSvetPoles || 0) > 0) { badges.push(`<span class="equip-count-badge">💡 Олди: ${eq.oldiSvetPoles}</span>`); }
+  if (equipmentFilters.hasPoles) { const polesTotal = (eq.poles || []).reduce((s, item) => s + (item.count || 0), 0); if (polesTotal > 0) badges.push(`<span class="equip-count-badge">️ Кол.: ${polesTotal}</span>`); }
+  if (equipmentFilters.hasArrows) { const arrowsTotal = (eq.additionalSections || []).filter(s => s.type && s.type.includes('Стрелки')).reduce((s, item) => s + (item.count || 0), 0); if (arrowsTotal > 0) badges.push(`<span class="equip-count-badge">➕ Стр.: ${arrowsTotal}</span>`); }
+  if (equipmentFilters.hasInfoSections) { const infoTotal = (eq.additionalSections || []).filter(s => s.type && s.type.includes('ИС')).reduce((s, item) => s + (item.count || 0), 0); if (infoTotal > 0) badges.push(`<span class="equip-count-badge">📋 Инф.: ${infoTotal}</span>`); }
+  return badges.join('');
+}
+function renderFilterPanel() {
+  const container = document.getElementById('filterSectionsContainer');
+  const baseObjects = getDistrictFilteredObjects();
+  const controllerCounts = CONTROLLER_TYPES.map(t => ({ type: t, count: baseObjects.filter(o => getEquipmentStats(o).controllerTypes.includes(t)).length }));
+  const asudCounts = ASUD_TYPES.map(t => ({ type: t, count: baseObjects.filter(o => getEquipmentStats(o).asudTypes.includes(t)).length }));
+  const phaseCounts = { red: baseObjects.filter(o => o.phase === 'red' || o.phase === 'off').length, yellow: baseObjects.filter(o => o.phase === 'yellow').length, green: baseObjects.filter(o => o.phase === 'green').length };
+  const roundTheClockCount = baseObjects.filter(o => hasRoundTheClockMode(o)).length;
+  const program2Count = baseObjects.filter(o => hasProgram2Mode(o)).length;
+  let html = '';
+  html += `<div class="filter-section"><div class="filter-section-title">️ Тип контроллера</div><div class="filter-checkbox-list">${controllerCounts.map(c => `<div class="filter-checkbox-item"><input type="checkbox" id="ctrl-${c.type}" ${equipmentFilters.controllers.includes(c.type)?'checked':''} onchange="toggleControllerFilter('${c.type}')"><label for="ctrl-${c.type}">${c.type}</label><span class="count-badge">${c.count}</span></div>`).join('')}</div></div>`;
+  html += `<div class="filter-section"><div class="filter-section-title">📡 Тип АСУД</div><div class="filter-checkbox-list">${asudCounts.map(a => `<div class="filter-checkbox-item"><input type="checkbox" id="asud-${a.type}" ${equipmentFilters.asud.includes(a.type)?'checked':''} onchange="toggleAsudFilter('${a.type}')"><label for="asud-${a.type}">${a.type}</label><span class="count-badge">${a.count}</span></div>`).join('')}</div></div>`;
+  if (isAdmin()) {
+    html += `<div class="filter-section"><div class="filter-section-title">🚦 Фаза светофора (статус)</div><div class="filter-checkbox-list">
+      <div class="filter-checkbox-item"><input type="checkbox" id="phase-red" ${equipmentFilters.filterPhase.includes('red')?'checked':''} onchange="togglePhaseFilter('red')"><label for="phase-red" style="color:#e74c3c;">🔴 Красный (Отключён)</label><span class="count-badge">${phaseCounts.red}</span></div>
+      <div class="filter-checkbox-item"><input type="checkbox" id="phase-yellow" ${equipmentFilters.filterPhase.includes('yellow')?'checked':''} onchange="togglePhaseFilter('yellow')"><label for="phase-yellow" style="color:#f1c40f;">🟡 Жёлтый (В разработке)</label><span class="count-badge">${phaseCounts.yellow}</span></div>
+      <div class="filter-checkbox-item"><input type="checkbox" id="phase-green" ${equipmentFilters.filterPhase.includes('green')?'checked':''} onchange="togglePhaseFilter('green')"><label for="phase-green" style="color:#2ecc71;">🟢 Зелёный (Работает)</label><span class="count-badge">${phaseCounts.green}</span></div>
+    </div></div>`;
+  }
+  html += `<div class="filter-section"><div class="filter-section-title">⚙️ Режим работы</div><div class="filter-checkbox-list">
+    <div class="filter-checkbox-item"><input type="checkbox" id="filter-round-the-clock" ${equipmentFilters.filterRoundTheClock?'checked':''} onchange="toggleRoundTheClockFilter()"><label for="filter-round-the-clock" style="color:#e67e22;">🟠 Круглосуточный режим</label><span class="count-badge">${roundTheClockCount}</span></div>
+    ${isAdmin() ? `<div class="filter-checkbox-item"><input type="checkbox" id="filter-program2" ${equipmentFilters.filterProgram2?'checked':''} onchange="toggleProgram2Filter()"><label for="filter-program2" style="color:#3498db;">🔵 Программа 2</label><span class="count-badge">${program2Count}</span></div>` : ''}
+  </div></div>`;
+  html += `<div class="filter-section"><div class="filter-section-title">✅ Наличие оборудования</div><div class="filter-checkbox-list">
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-tvp" ${equipmentFilters.hasTvp?'checked':''} onchange="toggleBooleanFilter('hasTvp')"><label for="has-tvp">🚶 ТВП</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-detectors" ${equipmentFilters.hasDetectors?'checked':''} onchange="toggleBooleanFilter('hasDetectors')"><label for="has-detectors">🔍 Детекторы транспорта</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-sound" ${equipmentFilters.hasSoundSignals?'checked':''} onchange="toggleBooleanFilter('hasSoundSignals')"><label for="has-sound">🔊 Звуковые сигнализаторы</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-oldi" ${equipmentFilters.hasOldiSvet?'checked':''} onchange="toggleBooleanFilter('hasOldiSvet')"><label for="has-oldi">💡 Колонки Олди-Свет</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-arrows" ${equipmentFilters.hasArrows?'checked':''} onchange="toggleBooleanFilter('hasArrows')"><label for="has-arrows">➕ Стрелки</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-info" ${equipmentFilters.hasInfoSections?'checked':''} onchange="toggleBooleanFilter('hasInfoSections')"><label for="has-info">📋 Информ. секции</label></div>
+    <div class="filter-checkbox-item"><input type="checkbox" id="has-poles" ${equipmentFilters.hasPoles?'checked':''} onchange="toggleBooleanFilter('hasPoles')"><label for="has-poles">🏗️ Колонки</label></div>
+  </div></div>`;
+  html += `<div class="filter-section"><div class="filter-section-title">📄 Наличие документов и данных</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;color:#e4e6eb;min-width:180px;">📄 Инвентарный номер:</label><select onchange="updateDocFilter('filterInventory', this.value)" style="flex:1;padding:8px 10px;font-size:13px;"><option value="all" ${equipmentFilters.filterInventory==='all'?'selected':''}>📋 Все</option><option value="has" ${equipmentFilters.filterInventory==='has'?'selected':''}>✅ Есть</option><option value="not" ${equipmentFilters.filterInventory==='not'?'selected':''}>❌ Нет</option></select></div>
+      <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;color:#e4e6eb;min-width:180px;">🚦 Пофазный разъезд:</label><select onchange="updateDocFilter('filterPhaseDiagram', this.value)" style="flex:1;padding:8px 10px;font-size:13px;"><option value="all" ${equipmentFilters.filterPhaseDiagram==='all'?'selected':''}>📋 Все</option><option value="has" ${equipmentFilters.filterPhaseDiagram==='has'?'selected':''}>✅ Есть</option><option value="not" ${equipmentFilters.filterPhaseDiagram==='not'?'selected':''}>❌ Нет</option></select></div>
+      <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;color:#e4e6eb;min-width:180px;">📐 Исполнительная съемка:</label><select onchange="updateDocFilter('filterExecutiveSurvey', this.value)" style="flex:1;padding:8px 10px;font-size:13px;"><option value="all" ${equipmentFilters.filterExecutiveSurvey==='all'?'selected':''}>📋 Все</option><option value="has" ${equipmentFilters.filterExecutiveSurvey==='has'?'selected':''}>✅ Есть</option><option value="not" ${equipmentFilters.filterExecutiveSurvey==='not'?'selected':''}>❌ Нет</option></select></div>
+      <div style="display:flex;align-items:center;gap:8px;"><label style="font-size:13px;color:#e4e6eb;min-width:180px;">📊 Диаграмма регулирования:</label><select onchange="updateDocFilter('filterSignalDiagram', this.value)" style="flex:1;padding:8px 10px;font-size:13px;"><option value="all" ${equipmentFilters.filterSignalDiagram==='all'?'selected':''}>📋 Все</option><option value="has" ${equipmentFilters.filterSignalDiagram==='has'?'selected':''}>✅ Есть</option><option value="not" ${equipmentFilters.filterSignalDiagram==='not'?'selected':''}>❌ Нет</option></select></div>
+    </div>
+  </div>`;
+  html += `<div class="filter-section"><div class="filter-section-title">📅 Ввод в эксплуатацию</div><div class="filter-range-label">Период:</div><div class="filter-range-row"><input type="date" value="${equipmentFilters.commissioningFrom}" onchange="updateDateFilter('commissioningFrom', this.value)"><input type="date" value="${equipmentFilters.commissioningTo}" onchange="updateDateFilter('commissioningTo', this.value)"></div></div>`;
+  html += `<div class="filter-section"><div class="filter-section-title">🔨 Последняя реконструкция</div><div class="filter-range-label">Период:</div><div class="filter-range-row"><input type="date" value="${equipmentFilters.reconstructionFrom}" onchange="updateDateFilter('reconstructionFrom', this.value)"><input type="date" value="${equipmentFilters.reconstructionTo}" onchange="updateDateFilter('reconstructionTo', this.value)"></div></div>`;
+  container.innerHTML = html;
+  const activeCount = countActiveFilters();
+  document.getElementById('activeFiltersCount').textContent = activeCount;
+  document.getElementById('filterActiveInfo').classList.toggle('active', activeCount > 0);
+}
+function toggleControllerFilter(type) { openList(); const idx = equipmentFilters.controllers.indexOf(type); if (idx === -1) equipmentFilters.controllers.push(type); else equipmentFilters.controllers.splice(idx, 1); renderList(); }
+function toggleAsudFilter(type) { openList(); const idx = equipmentFilters.asud.indexOf(type); if (idx === -1) equipmentFilters.asud.push(type); else equipmentFilters.asud.splice(idx, 1); renderList(); }
+function toggleBooleanFilter(key) { openList(); equipmentFilters[key] = !equipmentFilters[key]; renderFilterPanel(); renderList(); }
+function updateDocFilter(key, value) { openList(); equipmentFilters[key] = value; renderList(); }
+function updateDateFilter(key, value) { openList(); equipmentFilters[key] = value; renderList(); }
+function togglePhaseFilter(phase) { openList(); const idx = equipmentFilters.filterPhase.indexOf(phase); if (idx === -1) equipmentFilters.filterPhase.push(phase); else equipmentFilters.filterPhase.splice(idx, 1); renderFilterPanel(); renderList(); }
+function toggleRoundTheClockFilter() { openList(); equipmentFilters.filterRoundTheClock = !equipmentFilters.filterRoundTheClock; renderFilterPanel(); renderList(); }
+function toggleProgram2Filter() { openList(); equipmentFilters.filterProgram2 = !equipmentFilters.filterProgram2; renderFilterPanel(); renderList(); }
+function toggleListVisibility() { listVisible = !listVisible; const toggle = document.getElementById('listToggle'); if (listVisible) toggle.classList.add('active'); else toggle.classList.remove('active'); renderList(); }
+function openMap() {
+  document.getElementById('mapModal').classList.add('active');
+  if (typeof ymaps !== 'undefined') {
+    ymaps.ready(function() {
+      if (!myMap) {
+        myMap = new ymaps.Map("yandexMap", { center: savedMapState.center, zoom: savedMapState.zoom, controls: ['zoomControl', 'fullscreenControl', 'typeSelector'] });
+        myMap.events.add('boundschange', function(e) { savedMapState.center = myMap.getCenter(); savedMapState.zoom = myMap.getZoom(); });
+        updateMapMarkers();
+      } else { myMap.setCenter(savedMapState.center); myMap.setZoom(savedMapState.zoom); myMap.container.fitToViewport(); updateMapMarkers(); }
+    });
+  }
+}
+function closeMap() { document.getElementById('mapModal').classList.remove('active'); }
+function updateMapMarkers() {
+  if (!myMap) return;
+  objectPlacemarks.forEach(p => myMap.geoObjects.remove(p));
+  objectPlacemarks = [];
+  objects.forEach(obj => {
+    if (obj.coords) {
+      const coords = obj.coords.split(',').map(c => parseFloat(c.trim()));
+      if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+        const passportLabel = (obj.passportNumber || obj.id || '').substring(0, 10);
+        const color = obj.status === 'active' ? 'green' : (obj.status === 'in_development' ? 'yellow' : 'red');
+        const p = new ymaps.Placemark(coords, {
+          hintContent: `${obj.name} | Цикл: ${obj.cycle || 0} сек`,
+          iconContent: passportLabel,
+          balloonContent: `<div style="padding:10px;max-width:300px;font-size:14px;"><h4 style="font-size:16px;margin-bottom:8px;">${obj.name}</h4><p><b>Район:</b> ${obj.district}</p><p><b>Инв. номер:</b> ${obj.inventoryNumber||'—'}</p><p><b>№ паспорта:</b> ${obj.passportNumber||'—'}</p><p><b>Цикл:</b> ${obj.cycle || 0} сек</p><p><b>Статус:</b> <span style="color:${STATUS_CONFIG[obj.status]?.color || '#999'}">${STATUS_CONFIG[obj.status]?.label || 'Неизвестно'}</span></p><p style="margin-top:8px;color:#3498db;font-size:13px;">👉 Нажмите на метку для подробной информации</p></div>`
+        }, { preset: `islands#${color}Icon`, iconColor: color });
+        p.events.add('click', function (e) { p.balloon.close(); closeMap(); showDetail(obj.id); setTimeout(() => { detailEl.scrollTop = 0; }, 100); });
+        myMap.geoObjects.add(p);
+        objectPlacemarks.push(p);
+      }
+    }
+  });
+}
+// ✅ Функция навигации к объекту на карте
+function navigateToObjectOnMap(id) {
+  const obj = objects.find(x => x.id === id);
+  if (!obj || !obj.coords) { alert('⚠️ Координаты объекта не заданы'); return; }
+  const coords = obj.coords.split(',').map(c => parseFloat(c.trim()));
+  if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) { alert('⚠️ Неверный формат координат'); return; }
+  if (!document.getElementById('mapModal').classList.contains('active')) { openMap(); }
+  setTimeout(() => {
+    if (myMap) {
+      myMap.setCenter(coords, 16);
+      const placemark = objectPlacemarks.find(p => {
+        const pCoords = p.geometry.getCoordinates();
+        return Math.abs(pCoords[0] - coords[0]) < 0.0001 && Math.abs(pCoords[1] - coords[1]) < 0.0001;
+      });
+      if (placemark) placemark.balloon.open();
+    }
+  }, 300);
+}
+function getCurrentMode(o) {
+  if (o.status === 'disabled') return 'off';
+  if (!o.modeSchedule || o.modeSchedule.length === 0) return o.workMode || 'program1';
+  const now = new Date();
+  const day = now.getDay();
+  const isWeekend = (day === 0 || day === 6);
+  const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  for (const item of o.modeSchedule) {
+    const dayType = item.dayType || 'all';
+    let dayMatch = false;
+    if (dayType === 'all') dayMatch = true;
+    else if (dayType === 'monday') dayMatch = day === 1;
+    else if (dayType === 'weekdays') dayMatch = !isWeekend;
+    else if (dayType === 'weekdays-sat') dayMatch = day !== 0;
+    else if (dayType === 'tue-sun') dayMatch = day !== 1;
+    else if (dayType === 'weekends') dayMatch = isWeekend;
+    else if (dayType === 'sunday') dayMatch = day === 0;
+    if (dayMatch && isTimeInRange(currentTime, item.start, item.end)) return item.mode;
+  }
+  return o.workMode || 'program1';
+}
+function isTimeInRange(current, start, end) { if (start === '00:00' && end === '00:00') return true; return start <= end ? (current >= start && current < end) : (current >= start || current < end); }
+function updateDistrictOptions() { const existing = [...new Set(objects.map(o => o.district))]; const all = [...new Set([...DISTRICTS_LIST, ...existing])].sort(); const current = districtFilterEl.value; districtFilterEl.innerHTML = '<option value="">Все районы</option>' + all.map(d => `<option value="${d}" ${d===current?'selected':''}>${d}</option>`).join(''); document.getElementById('districtsList').innerHTML = DISTRICTS_LIST.map(d => `<option value="${d}">`).join(''); }
+function sortObjects(arr, by) {
+  const copy = [...arr];
+  const cmp = (a,b) => {
+    switch(by) {
+      case 'name': return a.name.localeCompare(b.name,'ru');
+      case 'name-desc': return b.name.localeCompare(a.name,'ru');
+      case 'district': return a.district.localeCompare(b.district,'ru') || a.name.localeCompare(b.name,'ru');
+      case 'status': { const order = { active: 0, in_development: 1, disabled: 2 }; return (order[a.status] || 0) - (order[b.status] || 0); }
+      case 'cycle': return (a.cycle||0) - (b.cycle||0);
+      case 'eq-trafficLights': return getEquipmentStats(b).totalTrafficLights - getEquipmentStats(a).totalTrafficLights;
+      case 'eq-trafficLights-asc': return getEquipmentStats(a).totalTrafficLights - getEquipmentStats(b).totalTrafficLights;
+      case 'eq-poles': return getEquipmentStats(b).totalPoles - getEquipmentStats(a).totalPoles;
+      case 'eq-detectors': return getEquipmentStats(b).totalDetectors - getEquipmentStats(a).totalDetectors;
+      case 'eq-controllers': return getEquipmentStats(b).totalControllers - getEquipmentStats(a).totalControllers;
+      case 'eq-commissioning': { const da = getEquipmentStats(a).commissioningDate || '0000-00-00'; const db = getEquipmentStats(b).commissioningDate || '0000-00-00'; return db.localeCompare(da); }
+      case 'eq-commissioning-old': { const da = getEquipmentStats(a).commissioningDate || '9999-99-99'; const db = getEquipmentStats(b).commissioningDate || '9999-99-99'; return da.localeCompare(db); }
+      case 'eq-reconstruction': { const da = getEquipmentStats(a).reconstructionDate || '0000-00-00'; const db = getEquipmentStats(b).reconstructionDate || '0000-00-00'; return db.localeCompare(da); }
+      case 'eq-total': return getEquipmentStats(b).totalEquipment - getEquipmentStats(a).totalEquipment;
+      default: return 0;
+    }
+  };
+  return copy.sort(cmp);
+}
+function getFilteredObjects() {
+  const filter = searchEl.value.toLowerCase().trim();
+  const district = districtFilterEl.value;
+  const sortBy = sortByEl.value;
+  let filtered = objects.filter(o => (o.name.toLowerCase().includes(filter) || (o.address||'').toLowerCase().includes(filter)) && (district === '' || o.district === district) && matchesEquipmentFilters(o));
+  filtered = sortObjects(filtered, sortBy);
+  return filtered;
+}
+function renderList() {
+  const listContainer = document.getElementById('listContainer');
+  const listHint = document.getElementById('listHint');
+  if (!listVisible) { listContainer.style.display = 'none'; listHint.style.display = 'block'; return; }
+  listContainer.style.display = 'block';
+  listHint.style.display = 'none';
+  const filtered = getFilteredObjects();
+  listEl.innerHTML = '';
+  if (filtered.length === 0) { listEl.innerHTML = '<div class="empty">Ничего не найдено</div>'; sortInfoEl.textContent = 'Показано объектов: 0'; return; }
+  sortInfoEl.textContent = `Показано объектов: ${filtered.length} из ${objects.length}`;
+  filtered.forEach(o => {
+    const invNum = o.inventoryNumber ? `<span style="color:#a0a4ab;">Инв: ${o.inventoryNumber}</span>` : '';
+    const passportNum = o.passportNumber ? `<span style="background:rgba(52, 152, 219, 0.2); color:#3498db; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:600; margin-left:6px;">📄 ${o.passportNumber}</span>` : '';
+    const stats = getEquipmentStats(o);
+    const eqBadge = stats.totalEquipment > 0 ? `<span class="badge" style="background:rgba(255,255,255,0.1);">⚙️ ${stats.totalEquipment}</span>` : '';
+    const statusConfig = STATUS_CONFIG[o.status] || STATUS_CONFIG.active;
+    const equipBadges = getEquipCountBadgesForItem(o);
+    const div = document.createElement('div');
+    div.className = 'item' + (o.id === currentId ? ' active' : '');
+    div.dataset.id = o.id;
+    div.innerHTML = `<div class="item-title">${o.name}</div><div class="item-addr">${invNum}${passportNum}</div><div class="item-meta"><span class="light ${o.phase}"></span><span style="color:${statusConfig.color}">${statusConfig.label}</span><span class="badge">📍 ${o.district}</span>${eqBadge}${equipBadges}</div>`;
+    div.onclick = () => showDetail(o.id);
+    listEl.appendChild(div);
+  });
+}
+function formatDate(dateStr) { if (!dateStr || dateStr === '—') return '—'; const parts = dateStr.split('-'); if (parts.length === 3) { return `${parts[2]}.${parts[1]}.${parts[0]}`; } return dateStr; }
+
+// ✅ НОВАЯ ФУНКЦИЯ: отображение циклов в столбик с подсветкой активного (или прочерк для "По вызову")
+function renderCyclesDisplay(o) {
+  const currentMode = getCurrentMode(o);
+  if (currentMode === 'on-demand') return '—';
+  if (!o.modeSchedule || !Array.isArray(o.modeSchedule) || o.modeSchedule.length === 0) return `${o.cycle || 0} сек`;
+  const programCycles = {};
+  o.modeSchedule.forEach(item => {
+    if (['program1', 'program2', 'program3'].includes(item.mode) && item.cycle) programCycles[item.mode] = item.cycle;
+  });
+  const programs = Object.keys(programCycles);
+  if (programs.length === 0) return `${o.cycle || 0} сек`;
+  if (programs.length === 1) return `${programCycles[programs[0]]} сек`;
+  const cycles = Object.values(programCycles);
+  const allSame = cycles.every(c => c === cycles[0]);
+  if (allSame) return `${cycles[0]} сек`;
+  const parts = [];
+  if (programCycles.program1 !== undefined) {
+    const isActive = currentMode === 'program1';
+    const bgStyle = isActive ? 'background: rgba(46, 204, 113, 0.15); border-left: 3px solid #2ecc71;' : '';
+    const labelStyle = isActive ? 'color: #2ecc71; font-weight: 700;' : 'color: #e4e6eb;';
+    parts.push(`<div style="padding: 2px 8px; border-radius: 4px; ${bgStyle}; font-size: 13px;"><span style="${labelStyle}">П1: ${programCycles.program1} сек</span></div>`);
+  }
+  if (programCycles.program2 !== undefined) {
+    const isActive = currentMode === 'program2';
+    const bgStyle = isActive ? 'background: rgba(46, 204, 113, 0.15); border-left: 3px solid #2ecc71;' : '';
+    const labelStyle = isActive ? 'color: #2ecc71; font-weight: 700;' : 'color: #e4e6eb;';
+    parts.push(`<div style="padding: 2px 8px; border-radius: 4px; ${bgStyle}; font-size: 13px;"><span style="${labelStyle}">П2: ${programCycles.program2} сек</span></div>`);
+  }
+  if (programCycles.program3 !== undefined) {
+    const isActive = currentMode === 'program3';
+    const bgStyle = isActive ? 'background: rgba(46, 204, 113, 0.15); border-left: 3px solid #2ecc71;' : '';
+    const labelStyle = isActive ? 'color: #2ecc71; font-weight: 700;' : 'color: #e4e6eb;';
+    parts.push(`<div style="padding: 2px 8px; border-radius: 4px; ${bgStyle}; font-size: 13px;"><span style="${labelStyle}">П3: ${programCycles.program3} сек</span></div>`);
+  }
+  return `<div style="display: flex; flex-direction: column; gap: 2px;">${parts.join('')}</div>`;
+}
+
+// ✅ НОВАЯ ФУНКЦИЯ: редактирование циклов только для используемых программ
+function startEditCycles(id) {
+  adminAction('Редактирование длительности циклов', async () => {
+    const o = objects.find(x => x.id === id);
+    if (!o) return;
+    const usedPrograms = new Set();
+    if (o.modeSchedule && Array.isArray(o.modeSchedule)) {
+      o.modeSchedule.forEach(item => { if (['program1', 'program2', 'program3'].includes(item.mode)) usedPrograms.add(item.mode); });
+    }
+    if (usedPrograms.size === 0) usedPrograms.add('program1');
+    const currentCycle = o.cycle || 0;
+    let program1Cycle = currentCycle, program2Cycle = currentCycle, program3Cycle = currentCycle;
+    if (o.modeSchedule && Array.isArray(o.modeSchedule)) {
+      o.modeSchedule.forEach(item => {
+        if (item.mode === 'program1' && item.cycle) program1Cycle = item.cycle;
+        if (item.mode === 'program2' && item.cycle) program2Cycle = item.cycle;
+        if (item.mode === 'program3' && item.cycle) program3Cycle = item.cycle;
+      });
+    }
+    let p1Val, p2Val, p3Val;
+    const newProgram1 = prompt('Длительность цикла для Программы 1 (сек):', program1Cycle);
+    if (newProgram1 === null) return;
+    p1Val = parseInt(newProgram1.trim());
+    if (isNaN(p1Val) || p1Val < 0) { alert('⚠️ Введите корректное число'); return; }
+    if (usedPrograms.has('program2')) {
+      const newProgram2 = prompt('Длительность цикла для Программы 2 (сек):', program2Cycle);
+      if (newProgram2 === null) return;
+      p2Val = parseInt(newProgram2.trim());
+      if (isNaN(p2Val) || p2Val < 0) { alert('⚠️ Введите корректное число'); return; }
+    } else { p2Val = p1Val; }
+    if (usedPrograms.has('program3')) {
+      const newProgram3 = prompt('Длительность цикла для Программы 3 (сек):', program3Cycle);
+      if (newProgram3 === null) return;
+      p3Val = parseInt(newProgram3.trim());
+      if (isNaN(p3Val) || p3Val < 0) { alert('⚠️ Введите корректное число'); return; }
+    } else { p3Val = p1Val; }
+    if (o.modeSchedule && Array.isArray(o.modeSchedule)) {
+      o.modeSchedule.forEach(item => {
+        if (item.mode === 'program1') item.cycle = p1Val;
+        if (item.mode === 'program2') item.cycle = p2Val;
+        if (item.mode === 'program3') item.cycle = p3Val;
+      });
+    }
+    o.cycle = p1Val;
+    await database.ref(`objects/${id}`).update({ cycle: o.cycle, modeSchedule: o.modeSchedule });
+    showDetail(id);
+    renderList();
+  });
+}
+
+async function exportToExcel() {
+  const btn = document.getElementById('btnExport');
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Формирование...';
+  btn.disabled = true;
+  try {
+    const exportObjects = getFilteredObjects();
+    if (exportObjects.length === 0) { alert('⚠️ Нет объектов для экспорта. Проверьте фильтры.'); btn.textContent = originalText; btn.disabled = false; return; }
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Светофорные объекты');
+    const columnsDef = [
+      { header: 'Название', key: 'name', width: 45 },
+      { header: 'Район', key: 'district', width: 18 },
+      { header: 'Статус', key: 'status', width: 20 },
+      { header: 'Инвентарный номер', key: 'inventory', width: 20 },
+      { header: 'Номер паспорта', key: 'passport', width: 18 },
+      { header: 'Длительность цикла (сек)', key: 'cycle', width: 22 },
+      { header: 'Тип контроллера', key: 'controller', width: 28 },
+      { header: 'Тип АСУД', key: 'asud', width: 22 },
+      { header: 'Транспортные', key: 'tlTransport', width: 16 },
+      { header: 'Велосипедные', key: 'tlBicycle', width: 16 },
+      { header: 'Пешеходные', key: 'tlPedestrian', width: 16 },
+      { header: 'Пеш. с отсчётом', key: 'tlPedCountdown', width: 18 },
+      { header: 'Доп. секции', key: 'addSections', width: 35 },
+      { header: 'ТВП', key: 'tvp', width: 22 },
+      { header: 'Звук. сигнал.', key: 'sound', width: 16 },
+      { header: 'Трансп. оцинк.', key: 'poleTransGalv', width: 18 },
+      { header: 'Трансп. 6м', key: 'poleTrans6m', width: 14 },
+      { header: 'Трансп. неоцинк.', key: 'poleTransNon', width: 20 },
+      { header: 'Пеш. оцинк.', key: 'polePedGalv', width: 16 },
+      { header: 'Пеш. 6м', key: 'polePed6m', width: 12 },
+      { header: 'Пеш. неоцинк.', key: 'polePedNon', width: 18 },
+      { header: 'Отдельностоящие', key: 'poleStandalone', width: 20 },
+      { header: 'Детекторы', key: 'detectors', width: 30 },
+      { header: 'Кол. Олди-Свет', key: 'oldiSvet', width: 16 },
+      { header: 'Ввод в экспл.', key: 'commissioning', width: 18 },
+      { header: 'Реконструкция', key: 'reconstruction', width: 18 }
+    ];
+    worksheet.columns = columnsDef;
+    const row1 = worksheet.getRow(1);
+    const row2 = worksheet.getRow(2);
+    const singleCols = [1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 23, 24, 25, 26];
+    singleCols.forEach(col => {
+      worksheet.mergeCells(1, col, 2, col);
+      const cell = worksheet.getCell(1, col);
+      cell.value = columnsDef[col - 1].header;
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = { top: { style: 'thin', color: { argb: 'FFBDC3C7' } }, left: { style: 'thin', color: { argb: 'FFBDC3C7' } }, bottom: { style: 'thin', color: { argb: 'FFBDC3C7' } }, right: { style: 'thin', color: { argb: 'FFBDC3C7' } } };
+    });
+    worksheet.mergeCells('I1:L1');
+    const trafficHeader = worksheet.getCell('I1');
+    trafficHeader.value = 'Светофоры';
+    trafficHeader.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    trafficHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+    trafficHeader.alignment = { horizontal: 'center', vertical: 'middle' };
+    trafficHeader.border = { top: { style: 'thin', color: { argb: 'FFBDC3C7' } }, left: { style: 'thin', color: { argb: 'FFBDC3C7' } }, bottom: { style: 'thin', color: { argb: 'FFBDC3C7' } }, right: { style: 'thin', color: { argb: 'FFBDC3C7' } } };
+    worksheet.mergeCells('P1:V1');
+    const polesHeader = worksheet.getCell('P1');
+    polesHeader.value = 'Колонки';
+    polesHeader.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    polesHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+    polesHeader.alignment = { horizontal: 'center', vertical: 'middle' };
+    polesHeader.border = { top: { style: 'thin', color: { argb: 'FFBDC3C7' } }, left: { style: 'thin', color: { argb: 'FFBDC3C7' } }, bottom: { style: 'thin', color: { argb: 'FFBDC3C7' } }, right: { style: 'thin', color: { argb: 'FFBDC3C7' } } };
+    const subHeaders = { 9: 'Транспортные', 10: 'Велосипедные', 11: 'Пешеходные', 12: 'Пеш. с отсчётом', 16: 'Трансп. оцинк.', 17: 'Трансп. 6м', 18: 'Трансп. неоцинк.', 19: 'Пеш. оцинк.', 20: 'Пеш. 6м', 21: 'Пеш. неоцинк.', 22: 'Отдельностоящие' };
+    Object.entries(subHeaders).forEach(([col, text]) => {
+      const cell = worksheet.getCell(2, parseInt(col));
+      cell.value = text;
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = { top: { style: 'thin', color: { argb: 'FFBDC3C7' } }, left: { style: 'thin', color: { argb: 'FFBDC3C7' } }, bottom: { style: 'thin', color: { argb: 'FFBDC3C7' } }, right: { style: 'thin', color: { argb: 'FFBDC3C7' } } };
+    });
+    row1.height = 30;
+    row2.height = 25;
+    exportObjects.forEach(o => {
+      const eq = o.equipment || {};
+      const tl = eq.trafficLights || {};
+      const controllers = (eq.controllers || []).map(c => `${c.type}: ${c.count} шт.`).join('; ') || '—';
+      const asud = (eq.asud || []).map(a => `${a.type}: ${a.count} шт.`).join('; ') || '—';
+      const addSections = (eq.additionalSections || []).map(s => `${s.type}: ${s.count} шт.`).join('; ') || '—';
+      const tvp = (eq.tvp || []).map(t => `${t.type}: ${t.count} шт.`).join('; ') || '—';
+      const detectors = (eq.detectors || []).map(d => `${d.type}: ${d.count} шт.`).join('; ') || '—';
+      const polesMap = {};
+      (eq.poles || []).forEach(p => { polesMap[p.type] = p.count || 0; });
+      worksheet.addRow({ name: o.name, district: o.district, status: STATUS_CONFIG[o.status]?.label || o.status, inventory: o.inventoryNumber || '—', passport: o.passportNumber || '—', cycle: o.cycle || 0, controller: controllers, asud: asud, tlTransport: tl.transport || 0, tlBicycle: tl.bicycle || 0, tlPedestrian: tl.pedestrian || 0, tlPedCountdown: tl.pedestrianCountdown || 0, addSections: addSections, tvp: tvp, sound: eq.soundSignals || 0, poleTransGalv: polesMap['Транспортные оцинкованные'] || 0, poleTrans6m: polesMap['Транспортная для камер высотой 6м'] || 0, poleTransNon: polesMap['Транспортные не оцинкованные'] || 0, polePedGalv: polesMap['Пешеходные оцинкованные'] || 0, polePed6m: polesMap['Пешеходная для камер высотой 6м'] || 0, polePedNon: polesMap['Пешеходные не оцинкованные'] || 0, poleStandalone: polesMap['Для камер высотой 6м отдельностоящие'] || 0, detectors: detectors, oldiSvet: eq.oldiSvetPoles || 0, commissioning: formatDate(eq.commissioningDate), reconstruction: formatDate(eq.reconstructionDate) });
+    });
+    const dataStartRow = 3;
+    const dataEndRow = worksheet.rowCount;
+    const totalCols = columnsDef.length;
+    const centerAlignedCols = [4, 5, 6, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26];
+    for (let rowIdx = dataStartRow; rowIdx <= dataEndRow; rowIdx++) {
+      const row = worksheet.getRow(rowIdx);
+      const isEven = (rowIdx - dataStartRow) % 2 === 0;
+      const bgColor = isEven ? 'FFF8F9FA' : 'FFFFFFFF';
+      for (let colIdx = 1; colIdx <= totalCols; colIdx++) {
+        const cell = row.getCell(colIdx);
+        cell.font = { size: 10, name: 'Calibri' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        cell.border = { top: { style: 'thin', color: { argb: 'FFD5D8DC' } }, left: { style: 'thin', color: { argb: 'FFD5D8DC' } }, bottom: { style: 'thin', color: { argb: 'FFD5D8DC' } }, right: { style: 'thin', color: { argb: 'FFD5D8DC' } } };
+        if (centerAlignedCols.includes(colIdx)) { cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; } else { cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; }
+      }
+      row.height = 20;
+    }
+    worksheet.views = [{ state: 'frozen', ySplit: 2 }];
+    const lastColLetter = String.fromCharCode(64 + totalCols);
+    worksheet.autoFilter = { from: 'A3', to: `${lastColLetter}${dataEndRow}` };
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const today = new Date().toISOString().slice(0, 10);
+    const activeCount = countActiveFilters();
+    const searchVal = searchEl.value.trim();
+    const districtVal = districtFilterEl.value;
+    let suffix = '';
+    if (searchVal) suffix += `_поиск-${searchVal.replace(/\s+/g, '_')}`;
+    if (districtVal) suffix += `_район-${districtVal.replace(/\s+/g, '_')}`;
+    if (activeCount > 0) suffix += `_фильтры-${activeCount}`;
+    const fileName = `Реестр_светофорных_объектов_${today}${suffix}.xlsx`;
+    saveAs(blob, fileName);
+    if (exportObjects.length < objects.length) { alert(`✅ Экспортировано ${exportObjects.length} из ${objects.length} объектов (с учётом фильтров)`); }
+  } catch (err) { console.error('Ошибка экспорта:', err); alert('❌ Ошибка при формировании Excel: ' + err.message); } finally { btn.textContent = originalText; btn.disabled = false; }
+}
+
+function formatFileSize(bytes) { if (bytes === 0) return '0 Bytes'; const k = 1024, sizes = ['Bytes','KB','MB','GB'], i = Math.floor(Math.log(bytes)/Math.log(k)); return Math.round(bytes/Math.pow(k,i)*100)/100 + ' ' + sizes[i]; }
+async function handlePdfUploadByType(objId, type, event) {
+  adminAction('Загрузка PDF файла', async () => {
+    const input = event.target, file = input.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) { alert('⚠️ Выберите файл .pdf'); input.value=''; return; }
+    if (file.size > 50 * 1024 * 1024) { alert('❌ Файл слишком большой (макс. 50 МБ)'); input.value=''; return; }
+    const o = objects.find(x => x.id === objId);
+    if (!o) { alert('❌ Объект не найден'); input.value=''; return; }
+    try {
+      alert(`⏳ Загрузка "${file.name}" в облако...`);
+      const storageRef = storage.ref(`pdfs/${objId}/${type}/${Date.now()}_${file.name}`);
+      const snapshot = await storageRef.put(file);
+      const downloadURL = await snapshot.ref.getDownloadURL();
+      const pdfData = { name: file.name, url: downloadURL, size: file.size, uploadedAt: new Date().toISOString() };
+      if (type === 'phase') { if (!o.phaseDiagram) o.phaseDiagram = { pdfFiles: [] }; o.phaseDiagram.pdfFiles.push(pdfData); await database.ref(`objects/${objId}/phaseDiagram`).set(o.phaseDiagram); }
+      else if (type === 'executive') { if (!o.executiveSurvey) o.executiveSurvey = { pdfFiles: [] }; o.executiveSurvey.pdfFiles.push(pdfData); await database.ref(`objects/${objId}/executiveSurvey`).set(o.executiveSurvey); }
+      else { if (!o.signalDiagram) o.signalDiagram = { pdfFiles: [] }; o.signalDiagram.pdfFiles.push(pdfData); await database.ref(`objects/${objId}/signalDiagram`).set(o.signalDiagram); }
+      alert(`✅ Файл "${file.name}" загружен в облако!`);
+      input.value = '';
+    } catch (err) { console.error('Ошибка загрузки:', err); alert('❌ Ошибка загрузки: ' + err.message); }
+  });
+  event.target.value = '';
+}
+async function deletePdfByType(objId, type, pdfIdx) {
+  adminAction('Удаление PDF файла', async () => {
+    const o = objects.find(x => x.id === objId);
+    if (!o) return;
+    let targetArray;
+    if (type === 'phase') targetArray = o.phaseDiagram?.pdfFiles;
+    else if (type === 'executive') targetArray = o.executiveSurvey?.pdfFiles;
+    else targetArray = o.signalDiagram?.pdfFiles;
+    if (!targetArray || !targetArray[pdfIdx]) return;
+    const pdf = targetArray[pdfIdx];
+    if (!confirm(`Удалить "${pdf.name}" из облака?`)) return;
+    try {
+      if (pdf.url) { const fileRef = storage.refFromURL(pdf.url); await fileRef.delete(); }
+      targetArray.splice(pdfIdx, 1);
+      if (type === 'phase') await database.ref(`objects/${objId}/phaseDiagram`).set(o.phaseDiagram);
+      else if (type === 'executive') await database.ref(`objects/${objId}/executiveSurvey`).set(o.executiveSurvey);
+      else await database.ref(`objects/${objId}/signalDiagram`).set(o.signalDiagram);
+      showDetail(objId);
+    } catch (err) { console.error('Ошибка удаления:', err); alert('❌ Ошибка удаления: ' + err.message); }
+  });
+}
+async function viewPdf(objId, type, pdfIdx) { const o = objects.find(x => x.id === objId); if (!o) return; let pdf; if (type === 'phase') pdf = o.phaseDiagram?.pdfFiles?.[pdfIdx]; else if (type === 'executive') pdf = o.executiveSurvey?.pdfFiles?.[pdfIdx]; else pdf = o.signalDiagram?.pdfFiles?.[pdfIdx]; if (!pdf || !pdf.url) { alert('❌ Ссылка на файл не найдена'); return; } window.open(pdf.url, '_blank'); }
+async function downloadPdf(objId, type, pdfIdx) { const o = objects.find(x => x.id === objId); if (!o) return; let pdf; if (type === 'phase') pdf = o.phaseDiagram?.pdfFiles?.[pdfIdx]; else if (type === 'executive') pdf = o.executiveSurvey?.pdfFiles?.[pdfIdx]; else pdf = o.signalDiagram?.pdfFiles?.[pdfIdx]; if (!pdf || !pdf.url) { alert('❌ Ссылка на файл не найдена'); return; } try { const response = await fetch(pdf.url); if (!response.ok) throw new Error('Network response was not ok'); const blob = await response.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = pdf.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (err) { window.open(pdf.url, '_blank'); } }
+function renderPdfSection(pdfFiles, objId, type) {
+  const pdfsHtml = (pdfFiles && pdfFiles.length > 0) ? pdfFiles.map((pdf, pdfIdx) => {
+    const uploadDate = new Date(pdf.uploadedAt);
+    const formattedDate = `${String(uploadDate.getDate()).padStart(2,'0')}.${String(uploadDate.getMonth()+1).padStart(2,'0')}.${uploadDate.getFullYear()}`;
+    return `<div class="pdf-item"><div class="pdf-icon">📄</div><div class="pdf-info"><div class="pdf-name">${pdf.name}</div><div class="pdf-meta">${formatFileSize(pdf.size)} · ${formattedDate}</div></div><div class="pdf-actions"><button class="pdf-btn" onclick="viewPdf('${objId}','${type}',${pdfIdx})" title="Открыть">️👁️</button><button class="pdf-btn" onclick="downloadPdf('${objId}','${type}',${pdfIdx})" title="Скачать">️⬇️</button>${isAdmin() ? `<button class="pdf-btn danger" onclick="deletePdfByType('${objId}','${type}',${pdfIdx})" title="Удалить">🗑️</button>` : ''}</div></div>`;
+  }).join('') : '<div style="color:#a0a4ab;font-size:14px;text-align:center;padding:14px;">PDF файлы не загружены</div>';
+  const uploadBtn = isAdmin() ? `<div class="upload-pdf-btn" onclick="document.getElementById('upload-${objId}-${type}').click()"><input type="file" id="upload-${objId}-${type}" accept=".pdf,application/pdf" onchange="handlePdfUploadByType('${objId}','${type}', event)"> Загрузить PDF (до 50 МБ)</div>` : '';
+  return `<div class="pdf-list">${pdfsHtml}</div>${uploadBtn}`;
+}
+function renderEquipmentView(equip) {
+  if (!equip) return '<div style="color:#a0a4ab;font-size:14px;text-align:center;padding:14px;">Оборудование не указано</div>';
+  const eq = equip;
+  const eqRow = (name, count) => `<div class="equipment-row"><span class="eq-name">${name}</span><span class="eq-count ${count===0?'zero':''}">${count} шт.</span></div>`;
+  const dateRow = (label, value) => `<div class="equipment-date-row"><span class="eq-label">${label}</span><span class="eq-value">${value ? value.split('-').reverse().join('.') : '—'}</span></div>`;
+  const controllersHtml = eq.controllers && eq.controllers.length > 0 ? eq.controllers.map(c => eqRow(c.type, c.count)).join('') : '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указаны</span></div>';
+  const asudHtml = eq.asud && eq.asud.length > 0 ? eq.asud.map(a => eqRow(a.type, a.count)).join('') : '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указан</span></div>';
+  const tlTotal = (eq.trafficLights?.transport||0) + (eq.trafficLights?.bicycle||0) + (eq.trafficLights?.pedestrian||0) + (eq.trafficLights?.pedestrianCountdown||0);
+  const trafficLightsHtml = `${eqRow('Транспортные', eq.trafficLights?.transport||0)}${eqRow('Транспортные (велосипедный)', eq.trafficLights?.bicycle||0)}${eqRow('Пешеходные', eq.trafficLights?.pedestrian||0)}${eqRow('Пешеходные с отсчётом времени', eq.trafficLights?.pedestrianCountdown||0)}<div class="equipment-row" style="border-top:1px solid rgba(241, 196, 15, 0.3);padding-top:8px;margin-top:4px;"><span class="eq-name" style="font-weight:600;color:#f1c40f;">Итого</span><span class="eq-count" style="color:#f1c40f;">${tlTotal} шт.</span></div>`;
+  const addSec = eq.additionalSections || [];
+  const arrows = addSec.filter(s => s.type && s.type.includes('Стрелки'));
+  const infoSec = addSec.filter(s => s.type && s.type.includes('ИС'));
+  const arrowsTotal = arrows.reduce((s,i) => s + (i.count||0), 0);
+  const infoTotal = infoSec.reduce((s,i) => s + (i.count||0), 0);
+  const addSecTotal = arrowsTotal + infoTotal;
+  let addSecHtml = '';
+  if (arrows.length > 0) { addSecHtml += '<div class="eq-section-title">Стрелки</div>'; arrows.forEach(s => addSecHtml += eqRow(s.type, s.count)); }
+  if (infoSec.length > 0) { addSecHtml += '<div class="eq-section-title">Информационные</div>'; infoSec.forEach(s => addSecHtml += eqRow(s.type, s.count)); }
+  if (addSec.length === 0) addSecHtml = '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указаны</span></div>';
+  else addSecHtml += `<div class="equipment-row" style="border-top:1px solid rgba(241, 196, 15, 0.3);padding-top:8px;margin-top:4px;"><span class="eq-name" style="font-weight:600;color:#f1c40f;">Итого</span><span class="eq-count" style="color:#f1c40f;">${addSecTotal} шт.</span></div>`;
+  const tvp = eq.tvp || [];
+  const tvpTotal = tvp.reduce((s,i) => s + (i.count||0), 0);
+  const tvpHtml = tvp.length > 0 ? tvp.map(s => eqRow(s.type, s.count)).join('') + `<div class="equipment-row" style="border-top:1px solid rgba(241, 196, 15, 0.3);padding-top:8px;margin-top:4px;"><span class="eq-name" style="font-weight:600;color:#f1c40f;">Итого</span><span class="eq-count" style="color:#f1c40f;">${tvpTotal} шт.</span></div>` : '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указаны</span></div>';
+  const poles = eq.poles || [];
+  const transPoles = poles.filter(s => s.type && (s.type.includes('Транспортн') || s.type.includes('транспортн')));
+  const pedPoles = poles.filter(s => s.type && (s.type.includes('Пешеходн') || s.type.includes('пешеходн')));
+  const standalonePoles = poles.filter(s => s.type && s.type.includes('отдельностоящ'));
+  const transPolesTotal = transPoles.reduce((s,i) => s + (i.count||0), 0);
+  const pedPolesTotal = pedPoles.reduce((s,i) => s + (i.count||0), 0);
+  const standalonePolesTotal = standalonePoles.reduce((s,i) => s + (i.count||0), 0);
+  const polesTotal = transPolesTotal + pedPolesTotal + standalonePolesTotal;
+  let polesHtml = '';
+  if (transPoles.length > 0) { polesHtml += '<div class="eq-section-title">ТРАНСПОРТНЫЕ</div>'; transPoles.forEach(s => polesHtml += eqRow(s.type, s.count)); }
+  if (pedPoles.length > 0) { polesHtml += '<div class="eq-section-title">ПЕШЕХОДНЫЕ</div>'; pedPoles.forEach(s => polesHtml += eqRow(s.type, s.count)); }
+  if (standalonePoles.length > 0) { polesHtml += '<div class="eq-section-title">ОТДЕЛЬНОСТОЯЩИЕ</div>'; standalonePoles.forEach(s => polesHtml += eqRow(s.type, s.count)); }
+  if (poles.length === 0) polesHtml = '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указаны</span></div>';
+  else polesHtml += `<div class="equipment-row" style="border-top:1px solid rgba(241, 196, 15, 0.3);padding-top:8px;margin-top:4px;"><span class="eq-name" style="font-weight:600;color:#f1c40f;">Итого</span><span class="eq-count" style="color:#f1c40f;">${polesTotal} шт.</span></div>`;
+  const detectors = eq.detectors || [];
+  const detTotal = detectors.reduce((s,i) => s + (i.count||0), 0);
+  const detHtml = detectors.length > 0 ? detectors.map(s => eqRow(s.type, s.count)).join('') + `<div class="equipment-row" style="border-top:1px solid rgba(241, 196, 15, 0.3);padding-top:8px;margin-top:4px;"><span class="eq-name" style="font-weight:600;color:#f1c40f;">Итого</span><span class="eq-count" style="color:#f1c40f;">${detTotal} шт.</span></div>` : '<div class="equipment-row"><span class="eq-name" style="color:#666">Не указаны</span></div>';
+  return `<div class="equipment-grid"><div class="equipment-category"><h4>🎛️ Тип контроллера</h4>${controllersHtml}</div><div class="equipment-category"><h4>📡 Тип АСУД</h4>${asudHtml}</div><div class="equipment-category"><h4>🚦 Количество светофоров</h4>${trafficLightsHtml}</div><div class="equipment-category"><h4>📅 Даты</h4>${dateRow('Ввод в эксплуатацию', eq.commissioningDate)}${dateRow('Последняя реконструкция', eq.reconstructionDate)}</div><div class="equipment-category"><h4>➕ Дополнительные секции</h4>${addSecHtml}</div><div class="equipment-category"><h4>🚶 ТВП</h4>${tvpHtml}</div><div class="equipment-category"><h4>🔊 Звуковые сигнализаторы</h4>${eqRow('Количество', eq.soundSignals||0)}</div><div class="equipment-category"><h4>🏗️ Колонки</h4>${polesHtml}</div><div class="equipment-category"><h4>🔍 Детекторы транспорта</h4>${detHtml}</div><div class="equipment-category"><h4>💡 Колонки Олди-Свет</h4>${eqRow('Количество', eq.oldiSvetPoles||0)}</div></div>`;
+}
+function renderEquipmentEditor(equip) {
+  const eq = equip || getDefaultEquipment();
+  const controllersHtml = (eq.controllers||[]).map((c,i) => `<div class="eq-dynamic-item"><select onchange="updateEqController(${i},'type',this.value)">${CONTROLLER_TYPES.map(t => `<option value="${t}" ${c.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${c.count}" onchange="updateEqController(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqController(${i})">✕</button></div>`).join('');
+  const asudHtml = (eq.asud||[]).map((a,i) => `<div class="eq-dynamic-item"><select onchange="updateEqAsud(${i},'type',this.value)">${ASUD_TYPES.map(t => `<option value="${t}" ${a.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${a.count}" onchange="updateEqAsud(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqAsud(${i})">✕</button></div>`).join('');
+  const addSecHtml = (eq.additionalSections||[]).map((s,i) => `<div class="eq-dynamic-item"><select onchange="updateEqAddSec(${i},'type',this.value)">${ADDITIONAL_SECTION_TYPES.map(t => `<option value="${t}" ${s.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${s.count}" onchange="updateEqAddSec(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqAddSec(${i})">✕</button></div>`).join('');
+  const tvpHtml = (eq.tvp||[]).map((s,i) => `<div class="eq-dynamic-item"><select onchange="updateEqTvp(${i},'type',this.value)">${TVP_TYPES.map(t => `<option value="${t}" ${s.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${s.count}" onchange="updateEqTvp(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqTvp(${i})">✕</button></div>`).join('');
+  const polesHtml = (eq.poles||[]).map((s,i) => `<div class="eq-dynamic-item"><select onchange="updateEqPoles(${i},'type',this.value)">${POLE_TYPES.map(t => `<option value="${t}" ${s.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${s.count}" onchange="updateEqPoles(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqPoles(${i})">✕</button></div>`).join('');
+  const detHtml = (eq.detectors||[]).map((s,i) => `<div class="eq-dynamic-item"><select onchange="updateEqDetectors(${i},'type',this.value)">${DETECTOR_TYPES.map(t => `<option value="${t}" ${s.type===t?'selected':''}>${t}</option>`).join('')}</select><input type="number" min="0" value="${s.count}" onchange="updateEqDetectors(${i},'count',parseInt(this.value)||0)"><button class="btn-icon danger" onclick="removeEqDetectors(${i})">✕</button></div>`).join('');
+  return `<div class="eq-editor-category"><h4>🎛️ Тип контроллера</h4><div class="eq-dynamic-list">${controllersHtml}</div><button class="eq-add-btn" onclick="addEqController()" style="margin-top:8px;">➕ Добавить контроллер</button></div><div class="eq-editor-category"><h4>📡 Тип АСУД</h4><div class="eq-dynamic-list">${asudHtml}</div><button class="eq-add-btn" onclick="addEqAsud()" style="margin-top:8px;">➕ Добавить АСУД</button></div><div class="eq-editor-category"><h4>🚦 Количество светофоров</h4><div class="eq-input-row"><label>Транспортные</label><input type="number" min="0" value="${eq.trafficLights?.transport||0}" onchange="updateEqField('trafficLights.transport',parseInt(this.value)||0)"></div><div class="eq-input-row"><label>Транспортные (велосипедный)</label><input type="number" min="0" value="${eq.trafficLights?.bicycle||0}" onchange="updateEqField('trafficLights.bicycle',parseInt(this.value)||0)"></div><div class="eq-input-row"><label>Пешеходные</label><input type="number" min="0" value="${eq.trafficLights?.pedestrian||0}" onchange="updateEqField('trafficLights.pedestrian',parseInt(this.value)||0)"></div><div class="eq-input-row"><label>Пешеходные с отсчётом времени</label><input type="number" min="0" value="${eq.trafficLights?.pedestrianCountdown||0}" onchange="updateEqField('trafficLights.pedestrianCountdown',parseInt(this.value)||0)"></div></div><div class="eq-editor-category"><h4>📅 Даты</h4><div class="eq-input-row"><label>Ввод в эксплуатацию</label><input type="date" value="${eq.commissioningDate||''}" onchange="updateEqField('commissioningDate',this.value)"></div><div class="eq-input-row"><label>Последняя реконструкция</label><input type="date" value="${eq.reconstructionDate||''}" onchange="updateEqField('reconstructionDate',this.value)"></div></div><div class="eq-editor-category"><h4>➕ Дополнительные секции</h4><div class="eq-dynamic-list">${addSecHtml}</div><button class="eq-add-btn" onclick="addEqAddSec()" style="margin-top:8px;">➕ Добавить секцию</button></div><div class="eq-editor-category"><h4>🚶 ТВП</h4><div class="eq-dynamic-list">${tvpHtml}</div><button class="eq-add-btn" onclick="addEqTvp()" style="margin-top:8px;">➕ Добавить ТВП</button></div><div class="eq-editor-category"><h4>🔊 Звуковые сигнализаторы</h4><div class="eq-input-row"><label>Количество</label><input type="number" min="0" value="${eq.soundSignals||0}" onchange="updateEqField('soundSignals',parseInt(this.value)||0)"></div></div><div class="eq-editor-category"><h4>🏗️ Колонки</h4><div class="eq-dynamic-list">${polesHtml}</div><button class="eq-add-btn" onclick="addEqPoles()" style="margin-top:8px;">➕ Добавить колонку</button></div><div class="eq-editor-category"><h4>🔍 Детекторы транспорта</h4><div class="eq-dynamic-list">${detHtml}</div><button class="eq-add-btn" onclick="addEqDetectors()" style="margin-top:8px;">➕ Добавить детектор</button></div><div class="eq-editor-category"><h4>💡 Колонки Олди-Свет</h4><div class="eq-input-row"><label>Количество</label><input type="number" min="0" value="${eq.oldiSvetPoles||0}" onchange="updateEqField('oldiSvetPoles',parseInt(this.value)||0)"></div></div>`;
+}
+function updateEqField(path, value) { if (!tempEquipment) return; const parts = path.split('.'); let obj = tempEquipment; for (let i = 0; i < parts.length - 1; i++) { if (!obj[parts[i]]) obj[parts[i]] = {}; obj = obj[parts[i]]; } obj[parts[parts.length-1]] = value; }
+function addEqController() { if (!tempEquipment.controllers) tempEquipment.controllers = []; tempEquipment.controllers.push({type: CONTROLLER_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqController(idx) { tempEquipment.controllers.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqController(idx, field, value) { tempEquipment.controllers[idx][field] = value; }
+function addEqAsud() { if (!tempEquipment.asud) tempEquipment.asud = []; tempEquipment.asud.push({type: ASUD_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqAsud(idx) { tempEquipment.asud.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqAsud(idx, field, value) { tempEquipment.asud[idx][field] = value; }
+function addEqAddSec() { if (!tempEquipment.additionalSections) tempEquipment.additionalSections = []; tempEquipment.additionalSections.push({type: ADDITIONAL_SECTION_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqAddSec(idx) { tempEquipment.additionalSections.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqAddSec(idx, field, value) { tempEquipment.additionalSections[idx][field] = value; }
+function addEqTvp() { if (!tempEquipment.tvp) tempEquipment.tvp = []; tempEquipment.tvp.push({type: TVP_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqTvp(idx) { tempEquipment.tvp.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqTvp(idx, field, value) { tempEquipment.tvp[idx][field] = value; }
+function addEqPoles() { if (!tempEquipment.poles) tempEquipment.poles = []; tempEquipment.poles.push({type: POLE_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqPoles(idx) { tempEquipment.poles.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqPoles(idx, field, value) { tempEquipment.poles[idx][field] = value; }
+function addEqDetectors() { if (!tempEquipment.detectors) tempEquipment.detectors = []; tempEquipment.detectors.push({type: DETECTOR_TYPES[0], count: 1}); renderEditEquipment(currentId); }
+function removeEqDetectors(idx) { tempEquipment.detectors.splice(idx,1); renderEditEquipment(currentId); }
+function updateEqDetectors(idx, field, value) { tempEquipment.detectors[idx][field] = value; }
+function renderEditEquipment(id) { const o = objects.find(x => x.id === id); if (!o) return; detailEl.innerHTML = `<h2>${o.name}</h2><div class="addr">${o.type || ''} · <span class="badge" style="background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:10px;font-size:11px;">Район: ${o.district}</span></div><div class="traffic-light-visual"><div class="bulb ${o.phase==='red'?'on-red':''}"></div><div class="bulb ${o.phase==='yellow'?'on-yellow':''}"></div><div class="bulb ${o.phase==='green'?'on-green':''}"></div></div><div class="info-grid"><div class="info-card"><div class="label">Инвентарный номер</div><div class="value">${o.inventoryNumber||'—'}</div></div><div class="info-card"><div class="label">Номер паспорта</div><div class="value">${o.passportNumber||'—'}</div></div><div class="info-card"><div class="label">Длительность цикла</div><div class="value">${renderCyclesDisplay(o)}</div></div><div class="info-card"><div class="label">Статус</div><div class="value" style="color:${STATUS_CONFIG[o.status]?.color || '#999'}">${STATUS_CONFIG[o.status]?.label || 'Неизвестно'}</div></div></div><div class="editor-section"><div class="editor-header"><h3>⚙️ Редактор оборудования</h3></div><div style="font-size:14px;color:#c0c4cb;margin-bottom:12px;">Укажите оборудование светофорного объекта и его количество.</div>${renderEquipmentEditor(tempEquipment)}</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;"><button class="btn" onclick="saveEquipment('${o.id}')">💾 Сохранить</button><button class="btn btn-cancel" onclick="cancelEdit('${o.id}')">Отмена</button></div>`; }
+function startEditEquipment(id) { adminAction('Редактирование оборудования', () => { const o = objects.find(x => x.id === id); if (!o) return; editingPhaseDiagram = true; tempEquipment = o.equipment ? JSON.parse(JSON.stringify(o.equipment)) : getDefaultEquipment(); tempEquipment = migrateEquipment(tempEquipment); renderEditEquipment(id); }); }
+async function saveEquipment(id) { if (!requireAdmin('Сохранение оборудования')) return; const o = objects.find(x => x.id === id); if (!o) return; o.equipment = tempEquipment; await database.ref(`objects/${id}/equipment`).set(o.equipment); editingPhaseDiagram = false; tempEquipment = null; showDetail(id); renderList(); renderFilterPanel(); }
+async function startEditName(id) { adminAction('Редактирование названия', async () => { const o = objects.find(x => x.id === id); if (!o) return; const currentName = o.name || ''; const newName = prompt('Введите новое название объекта:', currentName); if (newName === null) return; const trimmedName = newName.trim(); if (trimmedName === '') { alert('⚠️ Название не может быть пустым'); return; } if (trimmedName === currentName) return; o.name = trimmedName; await database.ref(`objects/${id}/name`).set(o.name); showDetail(id); renderList(); updateMapMarkers(); }); }
+async function toggleStatus(id) { adminAction('Изменение статуса', async () => { const o = objects.find(x => x.id === id); if (!o) return; const phaseOrder = ['green', 'yellow', 'red']; const currentPhaseIdx = phaseOrder.indexOf(o.phase === 'off' ? 'red' : o.phase); const newPhase = phaseOrder[(currentPhaseIdx + 1) % phaseOrder.length]; const newStatus = getStatusByPhase(newPhase); const newStatusConfig = STATUS_CONFIG[newStatus]; if (!confirm(`Перевести объект "${o.name}" в статус "${newStatusConfig.label}"?`)) return; o.status = newStatus; o.phase = newPhase; await database.ref(`objects/${id}`).update({ status: o.status, phase: o.phase }); showDetail(id); renderList(); updateStats(); renderFilterPanel(); alert(`✅ Статус объекта изменён на "${newStatusConfig.label}"`); }); }
+
+// ✅ ОБНОВЛЕННАЯ ФУНКЦИЯ showDetail: кнопка "На карте" рядом с названием
+function showDetail(id) {
+  const o = objects.find(x => x.id === id);
+  if (!o) return;
+  currentId = id; editingPhaseDiagram = false;
+  document.querySelectorAll('.item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+  const currentMode = getCurrentMode(o);
+  const invNumber = o.inventoryNumber || 'Не задан';
+  const passportNumber = o.passportNumber || 'Не задан';
+  const coordsVal = o.coords || 'Не заданы';
+  const statusConfig = STATUS_CONFIG[o.status] || STATUS_CONFIG.active;
+  const phasePdfFiles = (o.phaseDiagram && o.phaseDiagram.pdfFiles) ? o.phaseDiagram.pdfFiles : [];
+  const execPdfFiles = (o.executiveSurvey && o.executiveSurvey.pdfFiles) ? o.executiveSurvey.pdfFiles : [];
+  const diagramPdfFiles = (o.signalDiagram && o.signalDiagram.pdfFiles) ? o.signalDiagram.pdfFiles : [];
+  const equipmentHtml = renderEquipmentView(o.equipment);
+  const now = new Date();
+  const currentDay = now.getDay();
+  const isWeekend = (currentDay === 0 || currentDay === 6);
+  const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const editIcon = '<span class="edit-icon">✏️</span>';
+  let scheduleHtml = '';
+  if (o.modeSchedule && o.modeSchedule.length > 0) {
+    const dayTypes = [...new Set(o.modeSchedule.map(item => item.dayType || 'all'))];
+    const hasMixedDays = dayTypes.some(dt => dt !== 'all');
+    const createModeRow = (item) => {
+      const itemDayType = item.dayType || 'all';
+      const day = now.getDay();
+      let dayMatch = false;
+      if (itemDayType === 'all') dayMatch = true;
+      else if (itemDayType === 'monday') dayMatch = day === 1;
+      else if (itemDayType === 'weekdays') dayMatch = !isWeekend;
+      else if (itemDayType === 'weekdays-sat') dayMatch = day !== 0;
+      else if (itemDayType === 'tue-sun') dayMatch = day !== 1;
+      else if (itemDayType === 'weekends') dayMatch = isWeekend;
+      else if (itemDayType === 'sunday') dayMatch = day === 0;
+      const timeMatch = isTimeInRange(currentTime, item.start, item.end);
+      const isActive = dayMatch && timeMatch;
+      const activeStyle = isActive ? 'background: rgba(46, 204, 113, 0.15); border-left: 3px solid #2ecc71;' : '';
+      if (item.mode === 'on-demand') {
+        return `<div class="schedule-item" style="${activeStyle}">
+          <span class="mode-name"><span class="current-mode-badge mode-${item.mode}">${MODE_NAMES[item.mode]}</span></span>
+          <span style="color:#a0a4ab; font-style:italic;">—</span>
+          <span style="color:#a0a4ab; font-style:italic;">—</span>
+        </div>`;
+      }
+      return `<div class="schedule-item" style="${activeStyle}">
+        <span class="mode-name"><span class="current-mode-badge mode-${item.mode}">${MODE_NAMES[item.mode]}</span></span>
+        <span>с ${item.start}</span>
+        <span>до ${item.end}</span>
+      </div>`;
+    };
+    if (!hasMixedDays) {
+      const allHtml = o.modeSchedule.map(createModeRow).join('');
+      scheduleHtml = `<div style="display: flex; flex-direction: column; gap: 8px;">${allHtml}</div>`;
+    } else {
+      const leftModes = o.modeSchedule.filter(item => item.dayType === 'monday' || item.dayType === 'weekdays' || item.dayType === 'weekdays-sat' || item.dayType === 'all' || !item.dayType);
+      const rightModes = o.modeSchedule.filter(item => item.dayType === 'tue-sun' || item.dayType === 'weekends' || item.dayType === 'sunday' || item.dayType === 'all' || !item.dayType);
+      let leftTitle = '📅 Пн-Пт';
+      let rightTitle = '🌴 Сб-Вс';
+      if (dayTypes.includes('monday') && !dayTypes.includes('weekdays') && !dayTypes.includes('weekdays-sat')) { leftTitle = ' Пн'; }
+      else if (dayTypes.includes('weekdays-sat') && !dayTypes.includes('weekdays')) { leftTitle = ' Пн-Сб'; }
+      if (dayTypes.includes('tue-sun') && !dayTypes.includes('weekends')) { rightTitle = ' Вт-Вс'; }
+      else if (dayTypes.includes('sunday') && !dayTypes.includes('weekends')) { rightTitle = '🌴 Вс'; }
+      const leftHtml = leftModes.map(createModeRow).join('');
+      const rightHtml = rightModes.map(createModeRow).join('');
+      scheduleHtml = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <div style="font-size:14px;color:#f1c40f;margin-bottom:10px;font-weight:600;display:flex;align-items:center;gap:6px;">${leftTitle}</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">${leftHtml}</div>
+          </div>
+          <div>
+            <div style="font-size:14px;color:#f1c40f;margin-bottom:10px;font-weight:600;display:flex;align-items:center;gap:6px;">${rightTitle}</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">${rightHtml}</div>
+          </div>
+        </div>
+      `;
+    }
+  } else {
+    scheduleHtml = '<div style="color:#a0a4ab;font-size:15px;padding:10px;">Расписание не задано</div>';
+  }
+  // ✅ Кнопка "На карте" рядом с названием (только если есть координаты)
+  const mapButtonHtml = o.coords ? `<button class="btn-map-sm" onclick="navigateToObjectOnMap('${o.id}')" title="Показать объект на карте">📍 На карте</button>` : '';
+  detailEl.innerHTML = `
+    <h2>
+      <span onclick="startEditName('${o.id}')" title="Нажмите, чтобы изменить название" style="cursor:pointer;">${o.name} <span style="font-size:14px;opacity:0.6;">✏️</span></span>
+      ${mapButtonHtml}
+    </h2>
+    <div class="addr">${o.type || ''} · <span class="badge" style="background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:10px;font-size:11px;">Район: ${o.district}</span></div>
+    <div class="traffic-light-visual">
+      <div class="bulb ${o.phase==='red'?'on-red':''}"></div>
+      <div class="bulb ${o.phase==='yellow'?'on-yellow':''}"></div>
+      <div class="bulb ${o.phase==='green'?'on-green':''}"></div>
+    </div>
+    <div class="info-grid">
+      <div class="info-card"><div class="label">Инвентарный номер</div><div class="value editable-value" onclick="startEditInventoryNumber('${o.id}')"><span>${invNumber}</span>${editIcon}</div></div>
+      <div class="info-card"><div class="label">Номер паспорта</div><div class="value editable-value" onclick="startEditPassportNumber('${o.id}')"><span>${passportNumber}</span>${editIcon}</div></div>
+      <div class="info-card"><div class="label">Длительность цикла</div><div class="value editable-value" onclick="startEditCycles('${o.id}')" title="Нажмите, чтобы задать циклы для Программ 1, 2, 3"><span>${renderCyclesDisplay(o)}</span>${editIcon}</div></div>
+      <div class="info-card"><div class="label">Статус</div><div class="value editable-value" onclick="toggleStatus('${o.id}')" title="Нажмите для изменения статуса"><span style="color:${statusConfig.color}">${statusConfig.label}</span>${editIcon}</div></div>
+      <div class="info-card"><div class="label">Район</div><div class="value">${o.district}</div></div>
+      <div class="info-card"><div class="label">Координаты</div><div class="value editable-value" onclick="startEditCoords('${o.id}')" title="Нажмите, чтобы изменить координаты" style="font-size:14px;"><span>${coordsVal}</span>${editIcon}</div></div>
+    </div>
+    <div class="mode-section">
+      <h3>️ Режим работы</h3>
+      <div style="margin-top:12px;">
+        <div style="font-size:14px;color:#c0c4cb;margin-bottom:10px;">📅 Расписание режимов:</div>
+        ${scheduleHtml}
+      </div>
+      <button class="btn btn-sm" onclick="startEditModeSchedule('${o.id}')" style="margin-top:12px;">✏️ Редактировать режимы</button>
+    </div>
+    <div class="phase-section">
+      <h3>🚦 Пофазный разъезд</h3>
+      ${renderPdfSection(phasePdfFiles, o.id, 'phase')}
+    </div>
+    <div class="diagram-section">
+      <h3>📊 Диаграмма светофорного регулирования</h3>
+      ${renderPdfSection(diagramPdfFiles, o.id, 'signalDiagram')}
+    </div>
+    <div class="executive-section">
+      <h3>📐 Исполнительная съемка</h3>
+      ${renderPdfSection(execPdfFiles, o.id, 'executive')}
+    </div>
+    <div class="equipment-section">
+      <h3>⚙️ Оборудование</h3>
+      ${equipmentHtml}
+      <button class="btn btn-sm" onclick="startEditEquipment('${o.id}')" style="margin-top:12px;">✏️ Редактировать оборудование</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
+      <button class="btn" onclick="simulateSwitch('${o.id}')">⚡ Переключить фазу</button>
+      ${isAdmin() ? `<button class="btn btn-danger" onclick="deleteObject('${o.id}')">️🗑️ Удалить объект</button>` : ''}
+    </div>
+  `;
+}
+
+function startEditInventoryNumber(id) { adminAction('Редактирование инвентарного номера', () => { const o = objects.find(x => x.id === id); if (!o) return; const newVal = prompt('Введите инвентарный номер:', o.inventoryNumber || ''); if (newVal === null) return; o.inventoryNumber = newVal.trim(); database.ref(`objects/${id}/inventoryNumber`).set(o.inventoryNumber); showDetail(id); renderList(); }); }
+function startEditPassportNumber(id) { adminAction('Редактирование номера паспорта', () => { const o = objects.find(x => x.id === id); if (!o) return; const newVal = prompt('Введите номер паспорта:', o.passportNumber || ''); if (newVal === null) return; o.passportNumber = newVal.trim(); database.ref(`objects/${id}/passportNumber`).set(o.passportNumber); showDetail(id); renderList(); updateMapMarkers(); }); }
+async function startEditCoords(id) { adminAction('Редактирование координат', async () => { const o = objects.find(x => x.id === id); if (!o) return; const currentCoords = o.coords || ''; const newCoords = prompt('Введите координаты (формат: широта, долгота)\nНапример: 53.6884, 23.8258', currentCoords); if (newCoords === null) return; const trimmedCoords = newCoords.trim(); if (trimmedCoords !== '') { const parts = trimmedCoords.split(',').map(s => s.trim()); if (parts.length !== 2) { alert('⚠️ Неверный формат координат.\nИспользуйте формат: широта, долгота\nНапример: 53.6884, 23.8258'); return; } const lat = parseFloat(parts[0]); const lng = parseFloat(parts[1]); if (isNaN(lat) || isNaN(lng)) { alert('⚠️ Координаты должны быть числами.'); return; } if (lat < -90 || lat > 90 || lng < -180 || lng > 180) { alert('⚠️ Координаты вне допустимого диапазона.'); return; } o.coords = `${lat}, ${lng}`; } else { o.coords = ''; } await database.ref(`objects/${id}/coords`).set(o.coords); showDetail(id); renderList(); updateMapMarkers(); }); }
+function startEditModeSchedule(id) { adminAction('Редактирование режимов работы', () => { const o = objects.find(x => x.id === id); if (!o) return; editingPhaseDiagram = true; currentDayType = 'all'; tempModeSchedule = o.modeSchedule ? JSON.parse(JSON.stringify(o.modeSchedule)) : [{mode:'program1',start:'06:00',end:'22:00', dayType:'all', cycle: o.cycle || 60}]; renderEditModeSchedule(id); }); }
+function renderEditModeSchedule(id) {
+  const o = objects.find(x => x.id === id);
+  if (!o) return;
+  const filteredSchedule = tempModeSchedule.filter(item => item.dayType === currentDayType);
+  const scheduleRowsHtml = filteredSchedule.map((item, idx) => {
+    const realIdx = tempModeSchedule.indexOf(item);
+    if (item.mode === 'on-demand') {
+      return `<div class="mode-editor-row on-demand-row"><select onchange="updateModeScheduleItem(${realIdx},'mode',this.value); renderEditModeSchedule('${id}');">${Object.keys(MODE_NAMES).map(m=>`<option value="${m}" ${item.mode===m?'selected':''}>${MODE_NAMES[m]}</option>`).join('')}</select><span class="time-display">Режим по вызову</span><button class="btn-icon danger" onclick="removeModeScheduleItem(${realIdx})" title="Удалить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
+    }
+    return `<div class="mode-editor-row"><select onchange="updateModeScheduleItem(${realIdx},'mode',this.value); renderEditModeSchedule('${id}');">${Object.keys(MODE_NAMES).map(m=>`<option value="${m}" ${item.mode===m?'selected':''}>${MODE_NAMES[m]}</option>`).join('')}</select><input type="time" value="${item.start}" onchange="updateModeScheduleItem(${realIdx},'start',this.value)"><input type="time" value="${item.end}" onchange="updateModeScheduleItem(${realIdx},'end',this.value)"><button class="btn-icon danger" onclick="removeModeScheduleItem(${realIdx})" title="Удалить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
+  }).join('');
+  const emptyMessage = filteredSchedule.length === 0 ? '<div style="color:#a0a4ab;font-size:15px;text-align:center;padding:20px;">Для этого типа дней расписание не задано. Нажмите "+ Добавить период" чтобы создать.</div>' : '';
+  detailEl.innerHTML = `
+    <h2>${o.name}</h2>
+    <div class="addr">${o.type || ''} · <span class="badge" style="background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:10px;font-size:11px;">Район: ${o.district}</span></div>
+    <div class="traffic-light-visual"><div class="bulb ${o.phase==='red'?'on-red':''}"></div><div class="bulb ${o.phase==='yellow'?'on-yellow':''}"></div><div class="bulb ${o.phase==='green'?'on-green':''}"></div></div>
+    <div class="info-grid">
+      <div class="info-card"><div class="label">Инвентарный номер</div><div class="value">${o.inventoryNumber||'—'}</div></div>
+      <div class="info-card"><div class="label">Номер паспорта</div><div class="value">${o.passportNumber||'—'}</div></div>
+      <div class="info-card"><div class="label">Длительность цикла</div><div class="value">${renderCyclesDisplay(o)}</div></div>
+      <div class="info-card"><div class="label">Статус</div><div class="value" style="color:${STATUS_CONFIG[o.status]?.color || '#999'}">${STATUS_CONFIG[o.status]?.label || 'Неизвестно'}</div></div>
+    </div>
+    <div class="editor-section">
+      <div class="editor-header"><h3>⚙️ Редактор режимов работы</h3></div>
+      <div style="font-size:14px;color:#c0c4cb;margin-bottom:12px;"><b>Шаг 1:</b> Выберите тип дней для редактирования расписания:</div>
+      <div class="day-type-tabs">
+        ${DAY_TYPES_ORDER.map(d => `<div class="day-type-tab ${currentDayType === d ? 'active' : ''}" onclick="selectDayType('${d}')"><span class="tab-icon">${DAY_TYPES[d].split(' ')[0]}</span>${DAY_TYPES[d].split(' ').slice(1).join(' ')}</div>`).join('')}
+      </div>
+      <div style="font-size:14px;color:#c0c4cb;margin-bottom:12px;margin-top:16px;"><b>Шаг 2:</b> Настройте режимы для: <span style="color:#f1c40f;font-weight:600;">${DAY_TYPES[currentDayType]}</span></div>
+      <div style="font-size:13px;color:#a0a4ab;margin-bottom:12px;padding:8px 12px;background:rgba(241, 196, 15, 0.1);border-radius:6px;border-left:3px solid #f1c40f;">
+        💡 <b>Циклы для программ</b> задаются в карточке объекта — нажмите на поле <b>«Длительность цикла»</b> выше, чтобы установить отдельные значения для Программ 1, 2 и 3.
+      </div>
+      ${emptyMessage}
+      ${filteredSchedule.length > 0 ? `<div style="margin-bottom:8px;"><div style="display:grid;grid-template-columns:1fr 110px 110px 32px;gap:8px;font-size:12px;color:#f1c40f;font-weight:bold;margin-bottom:6px;padding:0 12px;"><span>Режим</span><span>Начало</span><span>Конец</span><span></span></div>${scheduleRowsHtml}</div><button class="btn btn-sm" onclick="addModeScheduleItem()" style="margin-top:8px;">➕ Добавить период</button>` : `<button class="btn btn-sm" onclick="addModeScheduleItem()" style="margin-top:8px;"> Добавить период для ${DAY_TYPES[currentDayType]}</button>`}
+      <div style="margin-top:16px;padding-top:16px;border-top:2px solid rgba(255,255,255,0.1);">
+        <div style="font-size:14px;color:#c0c4cb;margin-bottom:8px;"> Описание режимов:</div>
+        <div style="font-size:14px;line-height:1.6;">
+          ${Object.entries(MODE_DESCRIPTIONS).map(([key, desc]) => `<div style="margin-bottom:6px;"><span class="current-mode-badge mode-${key}" style="font-size:11px;">${MODE_NAMES[key]}</span><span style="color:#c0c4cb;margin-left:8px;">${desc}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
+      <button class="btn" onclick="saveModeSchedule('${o.id}')">💾 Сохранить</button>
+      <button class="btn btn-cancel" onclick="cancelEdit('${o.id}')">Отмена</button>
+    </div>
+  `;
+}
+function selectDayType(dayType) { currentDayType = dayType; renderEditModeSchedule(currentId); }
+function addModeScheduleItem() { tempModeSchedule.push({mode:'program1',start:'06:00',end:'22:00', dayType: currentDayType, cycle: (objects.find(x => x.id === currentId)?.cycle) || 60}); renderEditModeSchedule(currentId); }
+function removeModeScheduleItem(idx) { if (!confirm('Удалить этот период?')) return; tempModeSchedule.splice(idx,1); renderEditModeSchedule(currentId); }
+function updateModeScheduleItem(idx, field, value) { tempModeSchedule[idx][field] = value; }
+async function saveModeSchedule(id) {
+  if (!requireAdmin('Сохранение режимов работы')) return;
+  const o = objects.find(x => x.id === id);
+  if (!o) return;
+  if (tempModeSchedule.length === 0) { if (!confirm('Расписание пусто. Сохранить пустое?')) return; o.modeSchedule = []; }
+  else {
+    tempModeSchedule.forEach(item => { if (item.cycle === undefined || item.cycle === null) { item.cycle = o.cycle || 60; } });
+    o.modeSchedule = tempModeSchedule;
+    o.workMode = tempModeSchedule[0].mode;
+  }
+  await database.ref(`objects/${id}`).update({ modeSchedule: o.modeSchedule, workMode: o.workMode });
+  editingPhaseDiagram = false; tempModeSchedule = null; currentDayType = 'all';
+  showDetail(id); renderList();
+}
+function cancelEdit(id) { editingPhaseDiagram = false; tempPhaseDiagram = null; tempExecutiveSurvey = null; tempModeSchedule = null; tempEquipment = null; currentDayType = 'all'; showDetail(id); }
+function simulateSwitch(id) { adminAction('Переключение фазы', () => { const o = objects.find(x => x.id === id); if (!o) return; const currentPhase = (o.phase === 'off') ? 'red' : o.phase; const phaseOrder = ['green', 'yellow', 'red']; const currentPhaseIdx = phaseOrder.indexOf(currentPhase); const newPhase = phaseOrder[(currentPhaseIdx + 1) % phaseOrder.length]; const newStatus = getStatusByPhase(newPhase); o.phase = newPhase; o.status = newStatus; database.ref(`objects/${id}`).update({ phase: o.phase, status: o.status }); renderList(); showDetail(id); updateStats(); renderFilterPanel(); }); }
+async function deleteAllPdfsForObject(objId) { const o = objects.find(x => x.id === objId); if (!o) return; const types = ['phaseDiagram', 'executiveSurvey', 'signalDiagram']; for (const type of types) { if (o[type] && o[type].pdfFiles) { for (const pdf of o[type].pdfFiles) { if (pdf.url) { try { await storage.refFromURL(pdf.url).delete(); } catch(e) {} } } } } }
+async function deleteObject(id) { adminAction('Удаление объекта', async () => { if (!confirm('⚠️ Удалить объект и все его PDF файлы из облака?\n\nЭто действие нельзя отменить!')) return; const o = objects.find(x => x.id === id); if (o) { await deleteAllPdfsForObject(id); await database.ref(`objects/${id}`).remove(); } currentId = null; detailEl.innerHTML = '<div class="empty"> Введите название объекта в поиск, чтобы найти его</div>'; updateDistrictOptions(); updateStats(); renderList(); renderFilterPanel(); alert('✅ Объект успешно удалён'); }); }
+function handleAddObject() { adminAction('Добавление нового объекта', () => { openModal(); }); }
+async function addObject(e) {
+  e.preventDefault();
+  if (!isAdmin()) { closeModal(); openLoginModal('Создание нового объекта', () => { openModal(); }); return; }
+  const name = document.getElementById('f-name').value.trim();
+  const district = document.getElementById('f-district').value.trim();
+  const status = document.getElementById('f-status').value;
+  const cycle = parseInt(document.getElementById('f-cycle').value) || 0;
+  const coords = document.getElementById('f-coords').value.trim();
+  const inventoryNumber = document.getElementById('f-inventory').value.trim();
+  const passportNumber = document.getElementById('f-passport').value.trim();
+  const newId = 'U-' + String(Date.now()).slice(-6);
+  const statusConfig = STATUS_CONFIG[status] || STATUS_CONFIG.active;
+  const newObj = {
+    id: newId, name, address: '', district, type: 'Транспортный', status, cycle, coords,
+    inventoryNumber: inventoryNumber || '', passportNumber: passportNumber || '',
+    workMode: 'program1', phase: statusConfig.phase,
+    modeSchedule: [{mode:'program1',start:'06:00',end:'22:00', dayType:'all', cycle: cycle},{mode:'blinking-yellow',start:'22:00',end:'06:00', dayType:'all', cycle: cycle}],
+    phaseDiagram: {pdfFiles:[]}, executiveSurvey: {pdfFiles:[]}, signalDiagram: {pdfFiles:[]},
+    equipment: getDefaultEquipment()
+  };
+  await database.ref(`objects/${newId}`).set(newObj);
+  updateDistrictOptions(); updateStats(); renderList(); renderFilterPanel();
+  closeModal(); showDetail(newId);
+}
+function openModal() { document.getElementById('modal').classList.add('active'); document.getElementById('f-name').focus(); }
+function closeModal() { document.getElementById('modal').classList.remove('active'); document.getElementById('addForm').reset(); }
+document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+document.getElementById('loginModal').addEventListener('click', e => { if (e.target.id === 'loginModal') closeLoginModal(); });
+function updateStats() {
+  const baseObjects = getDistrictFilteredObjects();
+  document.getElementById('totalCount').textContent = baseObjects.length;
+  document.getElementById('activeCount').textContent = baseObjects.filter(o => o.status === 'active').length;
+  document.getElementById('devCount').textContent = baseObjects.filter(o => o.status === 'in_development').length;
+  document.getElementById('disabledCount').textContent = baseObjects.filter(o => o.status === 'disabled').length;
+}
+function clearSearch() { searchEl.value = ''; const clearBtn = document.getElementById('searchClearBtn'); if (clearBtn) clearBtn.classList.remove('visible'); renderList(); searchEl.focus(); }
+searchEl.addEventListener('input', function() { const clearBtn = document.getElementById('searchClearBtn'); if (this.value.trim().length > 0) { openList(); if (clearBtn) clearBtn.classList.add('visible'); } else { if (clearBtn) clearBtn.classList.remove('visible'); } renderList(); });
+districtFilterEl.addEventListener('change', function() { updateStats(); renderFilterPanel(); renderList(); });
+sortByEl.addEventListener('change', renderList);
+(async function init() { updateAdminUI(); searchEl.value = ''; districtFilterEl.value = ''; sortByEl.value = 'name'; loadFromFirebase(); })();
+</script>
+</body>
+</html>
